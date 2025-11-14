@@ -22,7 +22,16 @@ Interactive spectrogram annotation tool for marking onset, offset, and changepoi
 - Adjust spectrogram resolution for accuracy comparison
 - TODO: implement ranking system for annotation quality; add PSD views; inject as learning feedback mechanism
 
-## Installation
+## Installation From Command Line
+```bash
+git clone https://github.com/laelume/yaaat.git
+cd yaaat
+pip install -r requirements.txt
+cd yaaat
+python changepoint_annotator.py
+```
+
+## Installation As Package
 ```bash
 pip install yaaat
 ```
