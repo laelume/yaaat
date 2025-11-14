@@ -9,7 +9,7 @@ setup(
     name="yaaat",
     version="0.1.0",
     author="laelume",
-    description="Yet Another Audio Annotation Tool - Interactive spectrogram annotation for vocalizations",
+    description="Yet Another Audio Annotation Tool - Interactive changepoint annotation multitool for vocalizations",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/laelume/yaaat",  
