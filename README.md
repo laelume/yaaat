@@ -29,17 +29,17 @@ pip install yaaat
 
 ## Usage
 
-### Standalone Application
+### Run As Standalone Application
 ```bash
 download .exe file
 ```
 
-### Command Line
+### Start From Command Line
 ```bash
 yaaat
 ```
 
-### Python
+### Use in Python, Jupyter, &.c
 ```python
 from yaaat import ChangepointAnnotator
 import tkinter as tk
@@ -48,8 +48,6 @@ root = tk.Tk()
 app = ChangepointAnnotator(root)
 root.mainloop()
 ```
-
-
 
 ## Requirements
 
