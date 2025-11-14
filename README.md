@@ -2,6 +2,8 @@
 
 Interactive spectrogram annotation tool for marking onset, offset, and changepoints in vocalizations.
 
+![YAAAT Screenshot](changepoint_annotator_demo.jpg)
+
 ## Features
 
 - **Syllable-based workflow**: Click to add temporal points with automatic color coding
