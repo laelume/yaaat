@@ -1,6 +1,6 @@
 # YAAAT: Yet Another Audio Annotation Tool
 
-Interactive spectrogram annotation tool for marking onset, offset, and changepoints in vocalizations.
+Lightweight interactive bioacoustics annotation tool for marking onset, offset, and changepoints in vocalizations.
 
 ![YAAAT Screenshot](changepoint_annotator_demo.jpg)
 
