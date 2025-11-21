@@ -1,6 +1,10 @@
 # YAAAT: Yet Another Audio Annotation Tool
 
-Lightweight interactive bioacoustics annotation tool for marking onset, offset, and changepoints in vocalizations.
+Lightweight interactive bioacoustics annotation toolkit for annotating animal vocalizations. 
+
+Features: 
+1. Changepoint Annotator, for marking temporal onset, offset, and changepoints in vocalizations. 
+2. Peak Annotator, for marking dominant frequency peaks on the power spectrum. 
 
 ![YAAAT Screenshot](changepoint_annotator_demo.jpg)
 
