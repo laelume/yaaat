@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "changepoint_annotator"
 version = "0.1.0"
-description = "Interactive annotation tool for vocalizations"
+description = "Interactive bioacoustic annotation tool for vocalizations"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
