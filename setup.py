@@ -38,7 +38,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'yaaat=yaaat.changepoint_annotator:main',
+            'yaaat=yaaat.main:main',  # Launch tabbed interface
         ],
     },
 )
