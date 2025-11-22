@@ -1,6 +1,6 @@
 # YAAAT: Yet Another Audio Annotation Tool
 
-Lightweight interactive bioacoustics annotation toolkit for annotating animal vocalizations. 
+Lightweight interactive bioacoustics annotation toolkit for measuring animal vocalizations. 
 
 Features: 
 1. Changepoint Annotator, for marking temporal onset, offset, and changepoints in vocalizations. 
