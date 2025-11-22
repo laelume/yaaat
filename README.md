@@ -6,7 +6,16 @@ Features:
 1. Changepoint Annotator, for marking temporal onset, offset, and changepoints in vocalizations. 
 2. Peak Annotator, for marking dominant frequency peaks on the power spectrum. 
 
-![YAAAT Screenshot](changepoint_annotator_demo.jpg)
+<table>
+  <tr>
+    <td><img src="changepoint_annotator_demo.jpg" alt="Changepoint Annotator" width="400"/></td>
+    <td><img src="images/peak_annotator_screenshot.jpg" alt="Peak Annotator" width="400"/></td>
+  </tr>
+  <tr>
+    <td align="center">Changepoint Annotator</td>
+    <td align="center">Peak Annotator</td>
+  </tr>
+</table>
 
 ## Getting Started
 
