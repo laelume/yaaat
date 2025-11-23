@@ -10,4 +10,4 @@ from .main import YAATApp, main
 __version__ = "0.1.0"
 __author__ = "laelume"
 __license__ = "MIT"
-__all__ = ["ChangepointAnnotator", "PeakAnnotator", "YAATApp", "main"]
+__all__ = ["ChangepointAnnotator", "PeakAnnotator", "YAATApp"]
