@@ -37,7 +37,7 @@ pip install -e .
 ```bash
 yaaat
 ```
-Opens a tabbed interface with both annotators. Includes test audio files to get started immediately.
+Opens a tabbed interface with both annotators. Includes test audio files to get started. For some reason, auto-load is a little buggy, so clicking **Load Audio Files** and selecting the included test_audio yourself lets the interface work as-intended. 
 
 ### Use in Python Scripts
 ```python
