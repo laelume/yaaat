@@ -19,7 +19,7 @@ Features:
 
 ## Installation
 
-### Via PyPI (Recommended)
+### Via Pip (probably easiest)
 ```bash
 pip install yaaat
 ```
