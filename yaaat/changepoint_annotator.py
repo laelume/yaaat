@@ -17,13 +17,17 @@ import json
 from natsort import natsorted
 import sounddevice as sd
 
+from yaaat.utils import save_last_directory, load_last_directory
+
 
 class ChangepointAnnotator:
     """Interactive tool for annotating time-frequency changepoints on spectrograms"""
     
     def __init__(self, root):
         self.root = root
-        self.root.title("Spectrogram Changepoint Annotator")
+        # Only set title if root is actually a Tk window (not a Frame)
+        if isinstance(root, tk.Tk):
+            self.root.title("Spectrogram Changepoint Annotator")
         
         # Audio and spectrogram data
         self.audio_files = []
@@ -91,6 +95,10 @@ class ChangepointAnnotator:
         self.third_harmonic_multiplier = tk.DoubleVar(value=3.0)
 
         self.setup_ui()
+
+        # Auto-load last directory or default test audio
+        self.root.after(100, self.auto_load_directory)
+
     
     def setup_ui(self):
         """Create the user interface"""
@@ -122,10 +130,19 @@ class ChangepointAnnotator:
             canvas.configure(scrollregion=canvas.bbox("all"))
         scrollable_frame.bind("<Configure>", on_frame_configure)
 
-        # Mousewheel scrolling
+        # Mousewheel scrolling - bind to canvas only, not globally
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+        # Bind mousewheel when mouse enters the canvas area
+        def bind_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+        def unbind_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+
+        canvas.bind("<Enter>", bind_mousewheel)
+        canvas.bind("<Leave>", unbind_mousewheel)
 
         # Control Panel
         ttk.Label(scrollable_frame, text="Syllable Annotator", font=('', 10, 'bold')).pack(pady=(0, 2))
@@ -144,7 +161,8 @@ class ChangepointAnnotator:
         ttk.Label(scrollable_frame, text="File Management:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
 
         # File loading
-        ttk.Button(scrollable_frame, text="Load Audio Directory", command=self.load_directory).pack(anchor=tk.E, pady=2)
+        ttk.Button(scrollable_frame, text="Load Audio Directory", command=self.load_directory).pack(anchor=tk.W, pady=2)
+        ttk.Button(scrollable_frame, text="Load Test Audio", command=self.load_test_audio).pack(anchor=tk.W, pady=2)
 
         self.file_label = ttk.Label(scrollable_frame, text="No files loaded", wraplength=400, font=('', 8))
         self.file_label.pack(fill=tk.X, pady=2)
@@ -1155,7 +1173,71 @@ class ChangepointAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} files")
-    
+        save_last_directory(self.base_audio_dir)
+
+
+    def load_test_audio(self):
+        """Load bundled test audio files"""
+        from pathlib import Path
+        
+        # Go up to package dir, then up to repo root, then into test_files
+        test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'kiwi'
+        
+        if not test_audio_dir.exists():
+            print(f"DEBUG: Looking for test audio at: {test_audio_dir}")
+            print(f"DEBUG: Directory exists: {test_audio_dir.exists()}")
+            messagebox.showinfo("No Test Data", "Test audio files not found in package")
+            return
+        
+        # Find all .wav files (recursively)
+        self.audio_files = natsorted(test_audio_dir.rglob('*.wav'))
+        self.base_audio_dir = test_audio_dir
+        
+        if not self.audio_files:
+            print(f"DEBUG: No .wav files found in: {test_audio_dir}")
+            messagebox.showwarning("No Files", "No .wav files found in test directory")
+            return
+        
+        # Set up default save directory
+        default_dir = Path.home() / "yaaat_annotations" / "test_audio_example"
+        default_dir.mkdir(parents=True, exist_ok=True)
+        self.label_dir = default_dir
+        
+        # Update UI
+        self.save_dir_button.config(text=f"📁 {self.label_dir}")
+        
+        self.current_file_idx = 0
+        self.count_total_syllables()
+        self.count_skipped_files()
+        self.load_current_file()
+        
+        print(f"✓ Loaded {len(self.audio_files)} test files")
+        save_last_directory(self.base_audio_dir)
+
+    def auto_load_directory(self):
+        """Auto-load last directory or default test audio on startup"""
+        # Try last opened directory first
+        last_dir = load_last_directory()
+        if last_dir and last_dir.exists():
+            print(f"Auto-loading last directory: {last_dir}")
+            # Simulate loading without dialog
+            self.audio_files = natsorted(last_dir.rglob('*.wav'))
+            self.base_audio_dir = last_dir
+            if self.audio_files:
+                # Use default annotation location
+                dataset_name = last_dir.name
+                self.annotation_dir = Path.home() / "yaaat_annotations" / f"{dataset_name}_peaks"
+                self.annotation_dir.mkdir(parents=True, exist_ok=True)
+                self.save_dir_button.config(text=f"📁 {self.annotation_dir}")
+                self.current_file_idx = 0
+                self.count_total_syllables()
+                self.count_skipped_files()
+                self.load_current_file()
+                return
+        
+        # Fall back to test audio
+        self.load_test_audio()
+
     def load_current_file(self):
         """Load the current audio file and its annotations"""
         if not self.audio_files:

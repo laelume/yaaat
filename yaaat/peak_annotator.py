@@ -15,6 +15,8 @@ import sounddevice as sd
 import soundfile as sf
 from scipy.signal import spectrogram, welch, find_peaks
 
+from yaaat.utils import save_last_directory, load_last_directory
+
 
 # # ----------------------------------------------------------------------
 # # Dual-resolution spectrogram and PSD computation functions
@@ -342,7 +344,9 @@ class PeakAnnotator:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("Peak Annotator")
+        # Only set title if root is actually a Tk window (not a Frame)
+        if isinstance(root, tk.Tk):
+            self.root.title("Peak Annotator")
         
         # Audio and spectrogram data
         self.audio_files = []
@@ -391,6 +395,7 @@ class PeakAnnotator:
         self.total_files_annotated = 0
         
         # Peak detection parameters
+        self.auto_detected_peaks = None
         self.peak_prominence = tk.DoubleVar(value=0.1)  # For automatic peak detection
         self.peak_click_threshold_hz = tk.DoubleVar(value=100.0)  # Hz tolerance for click-to-peak
         
@@ -400,6 +405,9 @@ class PeakAnnotator:
         self.show_psd = tk.BooleanVar(value=True)  # Show PSD overlay
         
         self.setup_ui()
+
+        # Auto-load last directory or default test audio
+        self.root.after(100, self.auto_load_directory)
     
     def setup_ui(self):
         """Create the user interface"""
@@ -427,10 +435,39 @@ class PeakAnnotator:
             canvas.configure(scrollregion=canvas.bbox("all"))
         scrollable_frame.bind("<Configure>", on_frame_configure)
 
-        # Mousewheel scrolling
+        # Mousewheel scrolling - bind to canvas only, not globally
+        # self.control_mousewheel_bound = False
+
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+        # def bind_mousewheel(event):
+        #     if not self.control_mousewheel_bound:
+        #         print("DEBUG: bind_mousewheel called")
+        #         canvas.bind_all("<MouseWheel>", on_mousewheel)
+        #         self.control_mousewheel_bound = True
+        # def unbind_mousewheel(event):
+        #     if self.control_mousewheel_bound:
+        #         print("DEBUG: unbind_mousewheel called")
+        #         canvas.unbind_all("<MouseWheel>")
+        #         self.control_mousewheel_bound = False
+        # canvas.bind("<Enter>", bind_mousewheel)
+        # canvas.bind("<Leave>", unbind_mousewheel)
+        # Bind to scrollable_frame and all its children
+        def bind_to_mousewheel(widget):
+            widget.bind("<MouseWheel>", on_mousewheel)
+            for child in widget.winfo_children():
+                bind_to_mousewheel(child)
+
+        # Initial binding
+        bind_to_mousewheel(scrollable_frame)
+
+        # Rebind whenever frame reconfigures (new widgets added)
+        def on_frame_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            bind_to_mousewheel(scrollable_frame)  # Rebind to new widgets
+
+        scrollable_frame.bind("<Configure>", on_frame_configure)
 
         # ===== HEADER =====
         ttk.Label(scrollable_frame, text="Peak Annotator", font=('', 10, 'bold')).pack(pady=(0, 2))
@@ -452,6 +489,7 @@ class PeakAnnotator:
         ttk.Label(scrollable_frame, text="File Management:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
 
         ttk.Button(scrollable_frame, text="Load Audio Directory", command=self.load_directory).pack(anchor=tk.W, pady=2)
+        ttk.Button(scrollable_frame, text="Load Test Audio", command=self.load_test_audio).pack(anchor=tk.W, pady=2) 
 
         self.file_label = ttk.Label(scrollable_frame, text="No files loaded", wraplength=400, font=('', 8))
         self.file_label.pack(fill=tk.X, pady=2)
@@ -854,6 +892,7 @@ class PeakAnnotator:
     def update_prominence(self):
         """Update prominence label when slider changes"""
         self.prom_label.config(text=f"{self.peak_prominence.get():.2f}")
+        self.auto_detected_peaks = None  # Invalidate cache
         if self.show_auto_peaks.get() and self.y is not None:
             self.update_display(recompute=False)  # Redetect peaks with new prominence
     
@@ -913,7 +952,72 @@ class PeakAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} files")
-    
+        save_last_directory(self.base_audio_dir)
+
+
+    def load_test_audio(self):
+        """Load bundled test audio files"""
+        from pathlib import Path
+        
+        # Go up to package dir, then up to repo root, then into test_files
+        test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'kiwi'
+        
+        if not test_audio_dir.exists():
+            print(f"DEBUG: Looking for test audio at: {test_audio_dir}")
+            print(f"DEBUG: Directory exists: {test_audio_dir.exists()}")
+            messagebox.showinfo("No Test Data", "Test audio files not found in package")
+            return
+        
+        # Find all .wav files (recursively)
+        self.audio_files = natsorted(test_audio_dir.rglob('*.wav'))
+        self.base_audio_dir = test_audio_dir
+        
+        if not self.audio_files:
+            print(f"DEBUG: No .wav files found in: {test_audio_dir}")
+            messagebox.showwarning("No Files", "No .wav files found in test directory")
+            return
+        
+        # Set up default save directory
+        default_dir = Path.home() / "yaaat_annotations" / "test_audio"
+        default_dir.mkdir(parents=True, exist_ok=True)
+        self.label_dir = default_dir
+        
+        # Update UI
+        self.save_dir_button.config(text=f"📁 {self.label_dir}")
+        
+        self.current_file_idx = 0
+        self.count_total_peaks()
+        self.count_skipped_files()
+        self.load_current_file()
+        
+        print(f"✓ Loaded {len(self.audio_files)} test files")
+        save_last_directory(self.base_audio_dir)
+
+
+    def auto_load_directory(self):
+        """Auto-load last directory or default test audio on startup"""
+        # Try last opened directory first
+        last_dir = load_last_directory()
+        if last_dir and last_dir.exists():
+            print(f"Auto-loading last directory: {last_dir}")
+            # Simulate loading without dialog
+            self.audio_files = natsorted(last_dir.rglob('*.wav'))
+            self.base_audio_dir = last_dir
+            if self.audio_files:
+                # Use default annotation location
+                dataset_name = last_dir.name
+                self.annotation_dir = Path.home() / "yaaat_annotations" / f"{dataset_name}_peaks"
+                self.annotation_dir.mkdir(parents=True, exist_ok=True)
+                self.save_dir_button.config(text=f"📁 {self.annotation_dir}")
+                self.current_file_idx = 0
+                self.count_total_peaks()
+                self.load_current_file()
+                return
+        
+        # Fall back to test audio
+        self.load_test_audio()
+
+
     def load_current_file(self):
         """Load the current audio file and its peak annotations"""
         if not self.audio_files:
@@ -1413,9 +1517,16 @@ class PeakAnnotator:
                                 color="red", linewidth=1.5, label="PSD", zorder=5)
                         
                         # Show auto-detected peaks if enabled
+                        # if self.show_auto_peaks.get():
+                        #     peak_indices, _ = find_peaks(ppsd_scaled, prominence=self.peak_prominence.get())
+                        #     self.ax.scatter(self.pfreqs[mask_psd][peak_indices], ppsd_scaled[peak_indices],
+                        #                 color='orange', marker='x', s=50, linewidths=2, 
+                        #                 label='Auto-detected', zorder=6)
                         if self.show_auto_peaks.get():
-                            peak_indices, _ = find_peaks(ppsd_scaled, prominence=self.peak_prominence.get())
-                            self.ax.scatter(self.pfreqs[mask_psd][peak_indices], ppsd_scaled[peak_indices],
+                            if self.auto_detected_peaks is None or recompute:
+                                self.auto_detected_peaks, _ = find_peaks(ppsd_scaled, prominence=self.peak_prominence.get())
+                            self.ax.scatter(self.pfreqs[mask_psd][self.auto_detected_peaks], 
+                                        ppsd_scaled[self.auto_detected_peaks],
                                         color='orange', marker='x', s=50, linewidths=2, 
                                         label='Auto-detected', zorder=6)
                     
@@ -1448,9 +1559,16 @@ class PeakAnnotator:
                                 color="red", linewidth=1.5, label="PSD", zorder=5)
                         
                         # Show auto-detected peaks if enabled
+                        # if self.show_auto_peaks.get():
+                        #     peak_indices, _ = find_peaks(ppsd_scaled, prominence=self.peak_prominence.get())
+                        #     self.ax.scatter(self.pfreqs[mask_psd][peak_indices], ppsd_scaled[peak_indices],
+                        #                 color='orange', marker='x', s=50, linewidths=2, 
+                        #                 label='Auto-detected', zorder=6)
                         if self.show_auto_peaks.get():
-                            peak_indices, _ = find_peaks(ppsd_scaled, prominence=self.peak_prominence.get())
-                            self.ax.scatter(self.pfreqs[mask_psd][peak_indices], ppsd_scaled[peak_indices],
+                            if self.auto_detected_peaks is None or recompute:
+                                self.auto_detected_peaks, _ = find_peaks(ppsd_scaled, prominence=self.peak_prominence.get())
+                            self.ax.scatter(self.pfreqs[mask_psd][self.auto_detected_peaks], 
+                                        ppsd_scaled[self.auto_detected_peaks],
                                         color='orange', marker='x', s=50, linewidths=2, 
                                         label='Auto-detected', zorder=6)
                 
