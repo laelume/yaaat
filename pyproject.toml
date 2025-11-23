@@ -3,9 +3,63 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "changepoint_annotator"
-version = "0.1.0"
-description = "Interactive bioacoustic annotation tool for vocalizations"
+name = "yaaat"
+version = "0.1.5"
+description = "Interactive bioacoustic annotation tool for measuring vocalizations"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = "MIT"
+authors = [{name = "laelume"}]
+
+keywords = [
+    "bioacoustic", "acoustic", "ecoacoustic", "soundscape", 
+    "annotation", "audio annotation", "annotation tool", 
+    "signal processing", "audio analysis", "time frequency representation", "tfr", 
+    "spectrogram", "spectral analysis", "speech analysis", 
+    "vocalization", "animal communications", "communication", 
+    "interactive", "visualization", "toolkit", 
+    "changepoint", "nonlinear", "nonlinear phenomena", "nlp"
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "librosa",
+    "scipy",
+    "natsort",
+    "sounddevice",
+    "soundfile",
+]
+
+[project.urls]
+Homepage = "https://github.com/laelume/yaaat"
+
+[project.scripts]
+yaaat = "yaaat.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["yaaat*"]
+exclude = ["images*", "test_files*"]
+
+[tool.setuptools.package-data]
+yaaat = ["images/*", "test_files/test_audio/**/*.wav"]
