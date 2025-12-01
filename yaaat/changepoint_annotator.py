@@ -279,7 +279,7 @@ class ChangepointAnnotator:
                                          font=('', 8), relief=tk.FLAT, 
                                          fg='blue', cursor='hand2',
                                          command=self.open_save_directory,
-                                         bg='SystemButtonFace', anchor='w')
+                                         anchor='w')
         self.save_dir_button.pack(anchor=tk.W, pady=2)
 
         # Syllable and annotation information
@@ -687,14 +687,14 @@ class ChangepointAnnotator:
             if val == self.n_fft.get():
                 btn.config(bg='lightgreen', relief=tk.SUNKEN)
             else:
-                btn.config(bg='SystemButtonFace', relief=tk.RAISED)
+                btn.config(relief=tk.RAISED)
         
         # Highlight hop_length
         for btn, val in self.hop_buttons:
             if val == self.hop_length.get():
                 btn.config(bg='lightblue', relief=tk.SUNKEN)
             else:
-                btn.config(bg='SystemButtonFace', relief=tk.RAISED)
+                btn.config(relief=tk.RAISED)
     
     def on_press(self, event):
         """Handle mouse button press"""

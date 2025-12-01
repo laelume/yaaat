@@ -293,7 +293,7 @@ class PeakAnnotator:
                                         font=('', 8), relief=tk.FLAT, 
                                         fg='blue', cursor='hand2',
                                         command=self.open_annotation_location,
-                                        bg='SystemButtonFace', anchor='w')
+                                        anchor='w')
         self.annotationfile_button.pack(fill=tk.X, pady=2)
 
         # Save directory button
@@ -301,7 +301,7 @@ class PeakAnnotator:
                                          font=('', 8), relief=tk.FLAT, 
                                          fg='blue', cursor='hand2',
                                          command=self.open_save_location,
-                                         bg='SystemButtonFace', anchor='w')
+                                         anchor='w')
         self.save_dir_button.pack(anchor=tk.W, pady=2)
 
         # Peak count info
@@ -668,28 +668,28 @@ class PeakAnnotator:
             if val == self.n_fft_spect.get():
                 btn.config(bg='lightgreen', relief=tk.SUNKEN)
             else:
-                btn.config(bg='SystemButtonFace', relief=tk.RAISED)
+                btn.config(relief=tk.RAISED)
         
         # Highlight spectrogram hop
         for btn, val in self.hop_spect_buttons:
             if val == self.hop_spect.get():
                 btn.config(bg='lightblue', relief=tk.SUNKEN)
             else:
-                btn.config(bg='SystemButtonFace', relief=tk.RAISED)
+                btn.config(relief=tk.RAISED)
         
         # Highlight PSD n_fft
         for btn, val in self.nfft_psd_buttons:
             if val == self.n_fft_psd.get():
                 btn.config(bg='lightyellow', relief=tk.SUNKEN)
             else:
-                btn.config(bg='SystemButtonFace', relief=tk.RAISED)
+                btn.config(relief=tk.RAISED)
 
         # Highlight PSD hop
         for btn, val in self.hop_psd_buttons:
             if val == self.hop_psd.get():
                 btn.config(bg='lightcoral', relief=tk.SUNKEN)
             else:
-                btn.config(bg='SystemButtonFace', relief=tk.RAISED)
+                btn.config(relief=tk.RAISED)
 
     
     def update_prominence(self):
