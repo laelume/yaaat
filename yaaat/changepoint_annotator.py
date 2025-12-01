@@ -23,6 +23,7 @@ import pysoniq
 try: 
     from yaaat import utils
 except ImportError: 
+    print("/utils subdir does not exist")
     import utils
 
 

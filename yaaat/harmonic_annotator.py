@@ -25,11 +25,12 @@ import pysoniq
 
 try: 
     from yaaat import utils
-except ImportError: 
+except ImportError:
+    print("/utils subdir does not exist")
     import utils
 
 # ============================================================================
-# FUZZY VALLEY BACKEND (from your documents)
+# FUZZY VALLEY BACKEND
 # ============================================================================
 
 class FlexibleSpectralValleyTracker:
