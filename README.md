@@ -44,7 +44,7 @@ Opens a tabbed interface with both annotators. Includes test audio files to get 
 
 ### Use in Python Scripts
 ```python
-from yaaat import ChangepointAnnotator, PeakAnnotator
+from yaaat import ChangepointAnnotator, PeakAnnotator, HarmonicAnnotator
 import tkinter as tk
 
 # Launch changepoint annotator
@@ -52,9 +52,9 @@ root = tk.Tk()
 app = ChangepointAnnotator(root)
 root.mainloop()
 
-# Or launch peak annotator
+# Launch peak (or harmonic) annotator
 root = tk.Tk()
-app = PeakAnnotator(root)
+app = PeakAnnotator(root) # HarmonicAnnotator(root)
 root.mainloop()
 ```
 
@@ -82,11 +82,9 @@ root.mainloop()
 - Python ≥3.8 (built using 3.11)
 - numpy
 - matplotlib
-- librosa
 - scipy
 - natsort
-- sounddevice
-- soundfile
+- pysoniq # custom minimal audio package
 
 ## License
 
