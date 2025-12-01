@@ -1,19 +1,22 @@
-# YAAAT: Yet Another Audio Annotation Tool
+# YAAAT! Yet Another Audio Annotation Tool
 
 Interactive bioacoustic annotation tool for measuring vocalizations. 
 
 Features: 
 1. Changepoint Annotator, for marking temporal onset, offset, and changepoints in vocalizations. Useful for describing rapid fluctuations and identifying nonlinear phenomena. 
 2. Peak Annotator, for marking dominant frequency peaks on the power spectrum. Useful for describing spectrally complex vocalizations. 
+3. Harmonic Annotator, for identifying harmonics and boundaries to describe wavelets
 
 <table>
   <tr>
-    <td><img src="yaaat/images/changepoint_annotator_screenshot.jpg" alt="Changepoint Annotator" width="400"/></td>
-    <td><img src="yaaat/images/peak_annotator_screenshot.jpg" alt="Peak Annotator" width="400"/></td>
+    <td><img src="https://raw.githubusercontent.com/laelume/yaaat/main/yaaat/images/changepoint_annotator_screenshot.jpg" alt="Changepoint Annotator" width="400"/></td>
+    <td><img src="https://raw.githubusercontent.com/laelume/yaaat/main/yaaat/images/peak_annotator_screenshot.jpg" alt="Peak Annotator" width="400"/></td>
+    <td><img src="https://raw.githubusercontent.com/laelume/yaaat/main/yaaat/images/harmonic_annotator_screenshot.jpg" alt="Harmonic Annotator" width="400"/></td>
   </tr>
   <tr>
     <td align="center">Changepoint Annotator</td>
     <td align="center">Peak Annotator</td>
+    <td align="center">Harmonic Annotator</td>
   </tr>
 </table>
 
