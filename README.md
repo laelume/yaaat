@@ -5,7 +5,7 @@ Interactive bioacoustic annotation tool for measuring vocalizations.
 Features: 
 1. Changepoint Annotator, for marking temporal onset, offset, and changepoints in vocalizations. Useful for describing rapid fluctuations and identifying nonlinear phenomena. 
 2. Peak Annotator, for marking dominant frequency peaks on the power spectrum. Useful for describing spectrally complex vocalizations. 
-3. Harmonic Annotator, for identifying harmonics and boundaries to describe wavelets
+3. Harmonic Annotator, for identifying harmonics. 
 
 <table>
   <tr>
@@ -40,29 +40,31 @@ pip install -e .
 ```bash
 yaaat
 ```
-Opens a tabbed interface with both annotators. Includes test audio files to get started. For some reason, auto-load is a little buggy, so clicking **Load Audio Files** and selecting the included test_audio yourself lets the interface work as-intended. 
+Opens a tabbed interface with various annotators. Includes test audio files to get started. For some reason, auto-load is a little buggy, so clicking **Load Audio Files** and selecting the included test_audio yourself lets the interface work as-intended. 
+
+### Use Individual Annotators
+```bash
+python -m yaaat.changepoint_annotator
+python -m yaaat.peak_annotator
+python -m yaaat.harmonic_annotator
+```
 
 ### Use in Python Scripts
 ```python
 from yaaat import ChangepointAnnotator, PeakAnnotator, HarmonicAnnotator
 import tkinter as tk
 
-# Launch changepoint annotator
+# Launch annotator
 root = tk.Tk()
-app = ChangepointAnnotator(root)
-root.mainloop()
-
-# Launch peak (or harmonic) annotator
-root = tk.Tk()
-app = PeakAnnotator(root) # HarmonicAnnotator(root)
+app = ChangepointAnnotator(root) # or PeakAnnotator or HarmonicAnnotator
 root.mainloop()
 ```
 
-## Getting Started
+## Getting Started (Any Tab)
 
 1. Click **Load Audio Directory** to select files or **Load Test Audio** to explore test audio
 2. Choose where to save annotations (existing, new, or default directory)
-3. Click on the spectrogram to add annotation points
+3. Click on the spectrogram to add annotations points 
 4. Click **Finish Syllable** when done with annotation
 5. Move between files using **Next/Previous** buttons
 6. Annotations auto-save on file navigation or **Finish syllable**
