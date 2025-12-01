@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yaaat"
-version = "0.1.5"
+version = "0.1.8"
 description = "Interactive bioacoustic annotation tool for measuring vocalizations"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -43,11 +43,9 @@ classifiers = [
 dependencies = [
     "numpy",
     "matplotlib",
-    "librosa",
     "scipy",
     "natsort",
-    "sounddevice",
-    "soundfile",
+    "pysoniq"
 ]
 
 [project.urls]
@@ -58,7 +56,7 @@ yaaat = "yaaat.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["yaaat*"]
+include = ["yaaat*", "pysoniq"]
 exclude = ["images*", "test_files*"]
 
 [tool.setuptools.package-data]
