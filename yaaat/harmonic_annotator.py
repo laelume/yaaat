@@ -486,12 +486,12 @@ class HarmonicAnnotator:
         
         self.annotation_file_button = tk.Button(scrollable_frame, text="No annotation file", 
                                                font=('', 8), relief=tk.FLAT, fg='blue', cursor='hand2',
-                                               command=self.open_annotation_location, bg='SystemButtonFace', anchor='w')
+                                               command=self.open_annotation_location, anchor='w')
         self.annotation_file_button.pack(fill=tk.X, pady=2)
         
         self.save_dir_button = tk.Button(scrollable_frame, text="No save directory", 
                                         font=('', 8), relief=tk.FLAT, fg='blue', cursor='hand2',
-                                        command=self.open_save_location, bg='SystemButtonFace', anchor='w')
+                                        command=self.open_save_location, anchor='w')
         self.save_dir_button.pack(anchor=tk.W, pady=2)
         
         # Correction count
