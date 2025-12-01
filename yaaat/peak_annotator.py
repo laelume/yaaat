@@ -1,3 +1,7 @@
+# Remember to implement this at some point
+# from jellyfish.utils.jelly_funcs import make_daily_directory
+# daily_dir = make_daily_directory()
+
 import os
 import numpy as np
 import matplotlib
@@ -6,338 +10,22 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.collections
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+
 from pathlib import Path
 import json
 from natsort import natsorted
-import sounddevice as sd
-import soundfile as sf
 from scipy.signal import spectrogram, welch, find_peaks
 
-from yaaat.utils import save_last_directory, load_last_directory
+import pysoniq
 
+try: 
+    from yaaat import utils
+except ImportError: 
+    import utils
 
-# # ----------------------------------------------------------------------
-# # Dual-resolution spectrogram and PSD computation functions
-# # ----------------------------------------------------------------------
-
-# def compute_vertical_spectrogram(y, sr, nfft_spect=None, noverlap_spect=None, hop_spect=None):
-#     """
-#     Spectrogram rotated vertically (freq->x, time->y), safe for short signals
-#     and flipped horizontally (high freq -> right).
-    
-#     Args:
-#         y: Audio signal
-#         sr: Sample rate
-#         nfft_spect: FFT size for spectrogram
-#         noverlap_spect: Overlap samples (alternative to hop_spect)
-#         hop_spect: Hop length in samples (takes precedence over noverlap)
-    
-#     Returns:
-#         S_db_rot: Rotated spectrogram in dB
-#         freqs: Frequency array
-#         times: Time array
-#     """
-#     nfft_spect = nfft_spect or 512
-#     noverlap_spect = noverlap_spect or 256
-
-#     L = len(y)
-
-#     # Adapt nperseg for short signals
-#     nperseg = min(nfft_spect, max(16, L))
-    
-#     # Calculate noverlap from hop if provided
-#     if hop_spect is not None:
-#         noverlap = nperseg - hop_spect
-#     else:
-#         noverlap = min(noverlap_spect, nperseg - 1)
-    
-#     # Ensure noverlap is valid
-#     noverlap = max(0, min(noverlap, nperseg - 1))
-
-#     # Compute spectrogram
-#     freqs, times, S = spectrogram(
-#         y,
-#         fs=sr,
-#         nperseg=nperseg,
-#         noverlap=noverlap,
-#         scaling="density",
-#         mode="magnitude"
-#     )
-
-#     # Convert to dB
-#     S_db = 20 * np.log10(S + 1e-12)
-    
-#     # Rotate so freq->x, time->y, then flip horizontally
-#     S_db_rot = np.fliplr(np.rot90(S_db, k=-1))
-
-#     return S_db_rot, freqs, times
-
-
-# def compute_psd(y, sr, nfft_psd=None, noverlap_psd=None, hop_psd=None):
-#     """
-#     Welch PSD with auto-adjusted nperseg/noverlap to fit signal length
-    
-#     Args:
-#         y: Audio signal
-#         sr: Sample rate
-#         nfft_psd: FFT size for PSD
-#         noverlap_psd: Overlap samples (alternative to hop_psd)
-#         hop_psd: Hop length in samples (takes precedence over noverlap)
-    
-#     Returns:
-#         freqs: Frequency array
-#         psd_norm: Normalized PSD
-#     """
-#     L = len(y)
-    
-#     nfft_psd = nfft_psd or 1024
-#     noverlap_psd = noverlap_psd or 512
-    
-#     # Adapt nperseg for signal length
-#     nperseg = min(nfft_psd, max(16, L // 2))
-    
-#     # Calculate noverlap from hop if provided
-#     if hop_psd is not None:
-#         noverlap = nperseg - hop_psd
-#     else:
-#         noverlap = min(noverlap_psd, nperseg - 1)
-    
-#     # Ensure noverlap is valid
-#     noverlap = max(0, min(noverlap, nperseg - 1))
-    
-#     # Compute Welch PSD
-#     freqs, psd = welch(
-#         y,
-#         fs=sr,
-#         nperseg=nperseg,
-#         noverlap=noverlap,
-#         scaling="density"
-#     )
-    
-#     # Normalize PSD
-#     psd_norm = psd / (psd.max() + 1e-12)
-    
-#     return freqs, psd_norm
-
-
-
-
-
-
-
-
-
-
-
-
-# ----------------------------------------------------------------------
-# Mel Scale Utilities
-# ----------------------------------------------------------------------
-
-def hz_to_mel(hz):
-    """Convert Hz to mel scale"""
-    return 2595 * np.log10(1 + hz / 700)
-
-def mel_to_hz(mel):
-    """Convert mel scale to Hz"""
-    return 700 * (10**(mel / 2595) - 1)
-
-def create_mel_filterbank(sr, n_fft, n_mels=128, fmin=0, fmax=None):
-    """
-    Create mel filterbank matrix
-    
-    Args:
-        sr: Sample rate
-        n_fft: FFT size
-        n_mels: Number of mel bands
-        fmin: Minimum frequency (Hz)
-        fmax: Maximum frequency (Hz), defaults to sr/2
-    
-    Returns:
-        mel_basis: (n_mels, n_fft//2 + 1) filterbank matrix
-        mel_freqs: Center frequencies of mel bands
-    """
-    if fmax is None:
-        fmax = sr / 2
-    
-    # Create mel-spaced frequencies
-    mel_min = hz_to_mel(fmin)
-    mel_max = hz_to_mel(fmax)
-    mel_points = np.linspace(mel_min, mel_max, n_mels + 2)
-    hz_points = mel_to_hz(mel_points)
-    
-    # Create FFT bin frequencies
-    fft_freqs = np.linspace(0, sr / 2, n_fft // 2 + 1)
-    
-    # Create filterbank
-    mel_basis = np.zeros((n_mels, n_fft // 2 + 1))
-    
-    for i in range(n_mels):
-        left = hz_points[i]
-        center = hz_points[i + 1]
-        right = hz_points[i + 2]
-        
-        # Rising slope
-        rising = (fft_freqs - left) / (center - left)
-        rising = np.maximum(0, rising)
-        rising = np.minimum(1, rising)
-        
-        # Falling slope
-        falling = (right - fft_freqs) / (right - center)
-        falling = np.maximum(0, falling)
-        falling = np.minimum(1, falling)
-        
-        # Combine
-        mel_basis[i] = rising * falling
-    
-    mel_freqs = hz_points[1:-1]  # Center frequencies
-    
-    return mel_basis, mel_freqs
-
-def apply_mel_scale(S, mel_basis):
-    """
-    Apply mel filterbank to linear spectrogram
-    
-    Args:
-        S: Linear magnitude spectrogram (freq_bins, time_frames)
-        mel_basis: Mel filterbank matrix (n_mels, freq_bins)
-    
-    Returns:
-        S_mel: Mel-scaled spectrogram (n_mels, time_frames)
-    """
-    return np.dot(mel_basis, S)
-
-
-# ----------------------------------------------------------------------
-# Unified spectrogram computation
-# ----------------------------------------------------------------------
-
-def compute_spectrogram_unified(y, sr, nfft, hop, fmin=0, fmax=None, 
-                                scale='linear', n_mels=256, orientation='horizontal'):
-    """
-    Unified spectrogram computation with mel scale support
-    
-    Args:
-        y: Audio signal
-        sr: Sample rate
-        nfft: FFT size
-        hop: Hop length
-        fmin: Min frequency
-        fmax: Max frequency
-        scale: 'linear' or 'mel'
-        n_mels: Number of mel bands (only used if scale='mel')
-        orientation: 'horizontal' or 'vertical'
-    
-    Returns:
-        S_db: Spectrogram in dB
-        freqs: Frequency array
-        times: Time array
-    """
-    if fmax is None:
-        fmax = sr / 2
-    
-    # Adapt for short signals
-    L = len(y)
-    nperseg = min(nfft, max(16, L))
-    noverlap = nperseg - hop
-    noverlap = max(0, min(noverlap, nperseg - 1))
-    
-    # Compute linear spectrogram
-    freqs, times, S = spectrogram(
-        y, fs=sr, nperseg=nperseg, noverlap=noverlap,
-        scaling='density', mode='magnitude'
-    )
-    
-    # Apply frequency mask
-    freq_mask = (freqs >= fmin) & (freqs <= fmax)
-    S_masked = S[freq_mask, :]
-    freqs_masked = freqs[freq_mask]
-    
-    # Apply mel scale if requested
-    if scale == 'mel':
-        mel_basis, mel_freqs = create_mel_filterbank(sr, nfft, n_mels, fmin, fmax)
-        # Need to apply mel basis to full frequency range, then mask
-        mel_basis_masked = mel_basis[:, freq_mask]
-        S_final = apply_mel_scale(S_masked, mel_basis_masked)
-        freqs_final = mel_freqs
-    else:
-        S_final = S_masked
-        freqs_final = freqs_masked
-    
-    # Convert to dB
-    S_db = 20 * np.log10(S_final + 1e-12)
-    
-    # Rotate if vertical orientation requested
-    if orientation == 'vertical':
-        S_db = np.fliplr(np.rot90(S_db, k=-1))
-    
-    return S_db, freqs_final, times
-
-
-# ----------------------------------------------------------------------
-# Dual-resolution PSD computation
-# ----------------------------------------------------------------------
-
-def compute_psd(y, sr, nfft_psd=None, noverlap_psd=None, hop_psd=None):
-    """
-    Welch PSD with auto-adjusted nperseg/noverlap to fit signal length
-    
-    Args:
-        y: Audio signal
-        sr: Sample rate
-        nfft_psd: FFT size for PSD
-        noverlap_psd: Overlap samples (alternative to hop_psd)
-        hop_psd: Hop length in samples (takes precedence over noverlap)
-    
-    Returns:
-        freqs: Frequency array
-        psd_norm: Normalized PSD
-    """
-    L = len(y)
-    
-    nfft_psd = nfft_psd or 1024
-    noverlap_psd = noverlap_psd or 512
-    
-    # Adapt nperseg for signal length
-    nperseg = min(nfft_psd, max(16, L // 2))
-    
-    # Calculate noverlap from hop if provided
-    if hop_psd is not None:
-        noverlap = nperseg - hop_psd
-    else:
-        noverlap = min(noverlap_psd, nperseg - 1)
-    
-    # Ensure noverlap is valid
-    noverlap = max(0, min(noverlap, nperseg - 1))
-    
-    # Compute Welch PSD
-    freqs, psd = welch(
-        y,
-        fs=sr,
-        nperseg=nperseg,
-        noverlap=noverlap,
-        scaling="density"
-    )
-    
-    # Normalize PSD
-    psd_norm = psd / (psd.max() + 1e-12)
-    
-    return freqs, psd_norm
-
-
-
-
-
-
-
-
-
-
-# ----------------------------------------------------------------------
-# Main Peak Annotator Class
-# ----------------------------------------------------------------------
 
 class PeakAnnotator:
     """Interactive tool for annotating spectral peaks on dual-resolution spectrogram+PSD display"""
@@ -359,6 +47,11 @@ class PeakAnnotator:
         self.pfreqs = None  # PSD frequencies
         self.ppsd = None  # PSD values
         
+        # Syllable tracking
+        self.current_syllable = []  # Points in current syllable being built
+        self.syllables = []  # List of completed syllables
+
+
         # Peak tracking - main data structures
         self.current_peaks = []  # Peaks currently being annotated (not yet saved)
         self.peak_annotations = []  # All peaks for current file
@@ -381,6 +74,7 @@ class PeakAnnotator:
         # Drag state for zoom
         self.drag_start = None
         self.drag_rect = None
+        self.dragging_harmonic = None
         
         # State tracking
         self.changes_made = False
@@ -390,9 +84,11 @@ class PeakAnnotator:
         # Cache the spectrogram image
         self.spec_image = None
         
-        # Statistics tracking
+        # Track totals across files
         self.total_peaks_across_files = 0
         self.total_files_annotated = 0
+        self.total_skipped_files = 0  
+
         
         # Peak detection parameters
         self.auto_detected_peaks = None
@@ -404,6 +100,12 @@ class PeakAnnotator:
         self.show_freq_guides = tk.BooleanVar(value=False)
         self.show_psd = tk.BooleanVar(value=True)  # Show PSD overlay
         
+
+        # Playback state
+        self.playback_gain = tk.DoubleVar(value=1.0)
+        self.loop_enabled = False
+
+
         self.setup_ui()
 
         # Auto-load last directory or default test audio
@@ -485,11 +187,103 @@ class PeakAnnotator:
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
-        # ===== FILE MANAGEMENT =====
-        ttk.Label(scrollable_frame, text="File Management:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
+        
+        
+        # ===== FILE MANAGEMENT AND PLAYBACK CONTROLS =====
 
-        ttk.Button(scrollable_frame, text="Load Audio Directory", command=self.load_directory).pack(anchor=tk.W, pady=2)
-        ttk.Button(scrollable_frame, text="Load Test Audio", command=self.load_test_audio).pack(anchor=tk.W, pady=2) 
+        # Create horizontal frame for load buttons (left) and play button (right)
+        file_buttons_frame = ttk.Frame(scrollable_frame)
+        file_buttons_frame.pack(fill=tk.X, pady=2)
+
+        # Left side - File Management
+        load_buttons_frame = ttk.Frame(file_buttons_frame)
+        load_buttons_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 5))
+
+        ttk.Label(load_buttons_frame, text="File Management:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
+        ttk.Button(load_buttons_frame, text="Load Audio Directory", command=self.load_directory).pack(anchor=tk.W, pady=2)
+        ttk.Button(load_buttons_frame, text="Load Test Audio", command=self.load_test_audio).pack(anchor=tk.W, pady=2)
+
+        # Vertical separator (centered)
+        ttk.Separator(file_buttons_frame, orient=tk.VERTICAL).grid(row=0, column=1, sticky='ns', padx=10)
+
+        # Right side - Playback Controls
+        play_controls_frame = ttk.Frame(file_buttons_frame)
+        play_controls_frame.grid(row=0, column=2, sticky='nsew', padx=(5, 0))
+
+        ttk.Label(play_controls_frame, text="Playback Controls:", font=('', 9, 'bold')).pack(anchor=tk.CENTER, pady=(0, 2))
+
+        # Container for buttons and gain
+        controls_container = ttk.Frame(play_controls_frame)
+        controls_container.pack(anchor=tk.CENTER)
+
+        # Horizontal button layout (left side)
+        buttons_row = ttk.Frame(controls_container)
+        buttons_row.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Play button
+        play_button = tk.Button(buttons_row, text="▶", 
+                            command=self.play_audio, 
+                            bg='lightgreen', 
+                            font=('', 12, 'bold'),
+                            width=2,
+                            height=1,
+                            relief=tk.RAISED,
+                            cursor='hand2')
+        play_button.pack(side=tk.LEFT, padx=2)
+
+        # Pause button
+        self.pause_button = tk.Button(buttons_row, text="⏸", 
+                                command=self.pause_audio, 
+                                bg='yellow', 
+                                font=('', 12, 'bold'),
+                                width=2,
+                                height=1,
+                                relief=tk.RAISED,
+                                cursor='hand2')
+        self.pause_button.pack(side=tk.LEFT, padx=2)
+
+        # Stop button
+        stop_button = tk.Button(buttons_row, text="⏹", 
+                            command=self.stop_audio, 
+                            bg='lightcoral', 
+                            font=('', 12, 'bold'),
+                            width=2,
+                            height=1,
+                            relief=tk.RAISED,
+                            cursor='hand2')
+        stop_button.pack(side=tk.LEFT, padx=2)
+
+        # Loop button
+        self.loop_button = tk.Button(buttons_row, text="⟳", 
+                            command=self.toggle_loop, 
+                            bg='lightblue', 
+                            font=('', 12, 'bold'),
+                            width=2,
+                            height=1,
+                            relief=tk.RAISED,
+                            cursor='hand2')
+        self.loop_button.pack(side=tk.LEFT, padx=2)
+
+        # Vertical gain fader (right side)
+        gain_frame = ttk.Frame(controls_container)
+        gain_frame.pack(side=tk.LEFT)
+
+        ttk.Label(gain_frame, text="Gain", font=('', 7)).pack()
+
+        self.playback_gain = tk.DoubleVar(value=1.0)
+        gain_scale = ttk.Scale(gain_frame, from_=2.0, to=0.0, 
+                            variable=self.playback_gain,
+                            orient=tk.VERTICAL,
+                            length=60,
+                            command=lambda v: self.update_gain_label())
+        gain_scale.pack()
+
+        self.gain_label = ttk.Label(gain_frame, text="100%", font=('', 7))
+        self.gain_label.pack()
+
+        # Configure grid weights - equal distribution
+        file_buttons_frame.columnconfigure(0, weight=1)
+        file_buttons_frame.columnconfigure(2, weight=1)
 
         self.file_label = ttk.Label(scrollable_frame, text="No files loaded", wraplength=400, font=('', 8))
         self.file_label.pack(fill=tk.X, pady=2)
@@ -636,6 +430,7 @@ class PeakAnnotator:
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
         # ===== DISPLAY PARAMETERS =====
+
         ttk.Label(scrollable_frame, text="Display Range:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
 
         # Frequency range
@@ -649,7 +444,9 @@ class PeakAnnotator:
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
+
         # ===== PEAK DETECTION PARAMETERS =====
+
         ttk.Label(scrollable_frame, text="Peak Detection:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
         
         # Prominence slider
@@ -732,7 +529,9 @@ class PeakAnnotator:
             up_btn.bind('<ButtonPress-1>', lambda e, idx=i: self.start_continuous_harmonic(idx, 'up'))
             up_btn.bind('<ButtonRelease-1>', lambda e, idx=i: self.stop_continuous_harmonic(idx))
 
+
         # ===== ACTIONS =====
+
         ttk.Label(scrollable_frame, text="Actions:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
         
         # Action buttons grid
@@ -766,13 +565,16 @@ class PeakAnnotator:
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
+
         # ===== STATISTICS =====
+
         ttk.Label(scrollable_frame, text="Statistics:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
         self.stats_label = ttk.Label(scrollable_frame, text="No peaks annotated", 
                                      justify=tk.LEFT, font=('', 8))
         self.stats_label.pack(fill=tk.X, pady=2)
 
         # ===== RIGHT SPECTROGRAM PANEL =====
+
         plot_frame = ttk.Frame(main_frame)
         plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
@@ -826,6 +628,7 @@ class PeakAnnotator:
         
         # Update button highlights
         self.update_button_highlights()
+
 
     # ===== PARAMETER CHANGE METHODS =====
     
@@ -896,8 +699,41 @@ class PeakAnnotator:
         if self.show_auto_peaks.get() and self.y is not None:
             self.update_display(recompute=False)  # Redetect peaks with new prominence
     
+
+
+
     # ===== FILE MANAGEMENT =====
     
+
+
+
+    def count_skipped_files(self):
+        """Count total skipped files across all annotation files"""
+        self.total_skipped_files = 0
+        for audio_file in self.audio_files:
+            relative_path = audio_file.relative_to(self.base_audio_dir).parent
+            filename_prefix = str(relative_path).replace('/', '_').replace('\\', '_')
+            if filename_prefix and filename_prefix != '.':
+                label_file = self.label_dir / f"{filename_prefix}_{audio_file.stem}_changepoint_annotations.json"
+            else:
+                label_file = self.label_dir / f"{audio_file.stem}_changepoint_annotations.json"
+            
+            if label_file.exists():
+                try:
+                    with open(label_file, 'r') as f:
+                        data = json.load(f)
+                        if data.get('skipped', False):
+                            self.total_skipped_files += 1
+                except:
+                    pass
+        
+        print(f"Total skipped files: {self.total_skipped_files}")
+
+
+
+
+
+
     def load_directory(self):
         """Load all .wav files from a directory"""
         directory = filedialog.askdirectory(title="Select Audio Directory")
@@ -949,10 +785,11 @@ class PeakAnnotator:
         
         self.current_file_idx = 0
         self.count_total_peaks()
+        self.count_skipped_files()
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} files")
-        save_last_directory(self.base_audio_dir)
+        utils.save_last_directory(self.base_audio_dir)
 
 
     def load_test_audio(self):
@@ -997,7 +834,7 @@ class PeakAnnotator:
     def auto_load_directory(self):
         """Auto-load last directory or default test audio on startup"""
         # Try last opened directory first
-        last_dir = load_last_directory()
+        last_dir = utils.load_last_directory()
         if last_dir and last_dir.exists():
             print(f"Auto-loading last directory: {last_dir}")
             # Simulate loading without dialog
@@ -1026,8 +863,8 @@ class PeakAnnotator:
         audio_file = self.audio_files[self.current_file_idx]
         print(f"Loading {audio_file.name}...")
         
-        # Load audio using soundfile
-        self.y, self.sr = sf.read(str(audio_file))
+        # Load audio using pysoniq
+        self.y, self.sr = pysoniq.load(str(audio_file))
         if self.y.ndim > 1:
             self.y = np.mean(self.y, axis=1)  # Convert to mono
         
@@ -1072,7 +909,7 @@ class PeakAnnotator:
             return
         
         # Compute vertical spectrogram using unified function
-        self.S_db, self.freqs, self.times = compute_spectrogram_unified(
+        self.S_db, self.freqs, self.times = utils.compute_spectrogram_unified(
             self.y, 
             self.sr, 
             nfft=self.n_fft_spect.get(),
@@ -1084,7 +921,7 @@ class PeakAnnotator:
         )
         
         # Compute PSD (high frequency resolution)
-        self.pfreqs, self.ppsd = compute_psd(
+        self.pfreqs, self.ppsd = utils.compute_psd(
             self.y, 
             self.sr,
             nfft_psd=self.n_fft_psd.get(),
@@ -1902,11 +1739,88 @@ class PeakAnnotator:
             self.changes_made = True
             self.update_display(recompute=False)
     
+
+
     def play_audio(self):
-        """Play the current audio file"""
+        """Play the current audio file with gain applied"""
         if self.y is not None:
-            sd.play(self.y, self.sr)
+            
+            # Set main gain (will be applied on each loop iteration)
+            pysoniq.set_gain(self.playback_gain.get())
+            pysoniq.play(self.y, self.sr)
+            
+    def pause_audio(self):
+        """Pause audio playback"""        
+        if pysoniq.is_paused():  # This is correct - calling the function
+            pysoniq.resume()
+            # Update pause button appearance
+            if hasattr(self, 'pause_button'):
+                self.pause_button.config(bg='yellow')
+            # Restore loop button if it was enabled
+            import pysoniq.pause as pause_module
+            if pause_module.was_looping() and hasattr(self, 'loop_button'):
+                self.loop_button.config(bg='orange', relief=tk.SUNKEN)
+                self.loop_enabled = True
+        else:
+            pysoniq.pause()
+            # Update pause button appearance
+            if hasattr(self, 'pause_button'):
+                self.pause_button.config(bg='orange')
+
+    def stop_audio(self):
+        """Stop audio playback"""
+        print("DEBUG: stop_audio() called from changepoint_annotator.py")       
+        pysoniq.stop()
+        print("DEBUG: pysoniq.stop() completed from changepoint_annotator.py")
+        # Don't reset loop button - just stop playback
+        # User can manually disable loop if desired
+
+    def toggle_loop(self):
+        """Toggle loop mode"""        
+        self.loop_enabled = not self.loop_enabled
+        
+        # Set loop state FIRST
+        pysoniq.set_loop(self.loop_enabled)
+        
+        # Update button appearance
+        if self.loop_enabled:
+            self.loop_button.config(bg='orange', relief=tk.SUNKEN)
+        else:
+            self.loop_button.config(bg='lightblue', relief=tk.RAISED)
+        
+        # Set loop state
+        pysoniq.set_loop(self.loop_enabled)
+        print(f"Loop {'enabled' if self.loop_enabled else 'disabled'}")
+
+    def update_gain_label(self):
+        """Update gain label and master gain when slider moves"""        
+        gain = self.playback_gain.get()
+        gain_percent = int(gain * 100)
+        self.gain_label.config(text=f"{gain_percent}%")
+        
+        # Update main gain (takes effect on next loop iteration)
+        pysoniq.set_gain(gain)
     
+    def open_save_directory(self):
+        """Open the save directory in the system file explorer"""
+        if self.label_dir is None:
+            messagebox.showinfo("No Directory", "No save directory set. Load audio files first.")
+            return
+        
+        import subprocess
+        import sys
+        import os
+        
+        try:
+            if sys.platform == 'win32':
+                os.startfile(str(self.label_dir))
+            elif sys.platform == 'darwin':  # macOS
+                subprocess.run(['open', str(self.label_dir)])
+            else:  # linux
+                subprocess.run(['xdg-open', str(self.label_dir)])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open directory: {e}")
+
     def save_annotations(self):
         """Save peak annotations to JSON"""
         try:
@@ -1970,7 +1884,103 @@ class PeakAnnotator:
             import traceback
             traceback.print_exc()
     
-    # ===== NAVIGATION =====
+
+
+
+
+
+        # ===== NAVIGATION =====
+
+        
+        def skip_file(self):
+            """Mark current file as skipped with reason and create blank annotation file"""
+            if not self.audio_files:
+                return
+            
+            # Create dialog for skip reason
+            dialog = tk.Toplevel(self.root)
+            dialog.title("Skip File")
+            dialog.geometry("300x150")
+            
+            ttk.Label(dialog, text="Reason for skipping:", font=('', 10, 'bold')).pack(pady=10)
+            
+            reason_var = tk.StringVar(value="Noisy")
+            
+            ttk.Radiobutton(dialog, text="Noisy", variable=reason_var, value="Noisy").pack(anchor=tk.W, padx=20)
+            ttk.Radiobutton(dialog, text="Truncated", variable=reason_var, value="Truncated").pack(anchor=tk.W, padx=20)
+            ttk.Radiobutton(dialog, text="Other", variable=reason_var, value="Other").pack(anchor=tk.W, padx=20)
+            
+            result = {'confirmed': False, 'reason': None}
+            
+            def on_ok():
+                result['confirmed'] = True
+                result['reason'] = reason_var.get()
+                dialog.destroy()
+            
+            def on_cancel():
+                dialog.destroy()
+            
+            button_frame = ttk.Frame(dialog)
+            button_frame.pack(pady=10)
+            ttk.Button(button_frame, text="OK", command=on_ok).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
+            
+            # Make dialog modal
+            dialog.transient(self.root)
+            dialog.grab_set()
+            self.root.wait_window(dialog)
+            
+            # If user cancels, don't skip
+            if not result['confirmed']:
+                return
+            
+            reason = result['reason']
+            
+            audio_file = self.audio_files[self.current_file_idx]
+            relative_path = audio_file.relative_to(self.base_audio_dir).parent
+            filename_prefix = str(relative_path).replace('/', '_').replace('\\', '_')
+            
+            if filename_prefix and filename_prefix != '.':
+                label_file = self.label_dir / f"{filename_prefix}_{audio_file.stem}_changepoint_annotations.json"
+            else:
+                label_file = self.label_dir / f"{audio_file.stem}_changepoint_annotations.json"
+            
+            # Create blank annotation file marked as skipped with reason
+            data = {
+                'audio_file': str(audio_file),
+                'skipped': True,
+                'skip_reason': reason,
+                'annotations': [],
+                'syllables': [],
+                'syllable_metrics': [],
+                'spec_params': {
+                    'n_fft': self.n_fft.get(),
+                    'hop_length': self.hop_length.get(),
+                    'fmin_calc': self.fmin_calc.get(),
+                    'fmax_calc': self.fmax_calc.get(),
+                    'fmin_display': self.fmin_display.get(),
+                    'fmax_display': self.fmax_display.get()
+                },
+                'psd_params': {
+                    'n_fft': self.n_fft_psd.get(),
+                    'nperseg': self.nperseg_psd.get(),
+                    'fmin': self.fmin_psd.get(),
+                    'fmax': self.fmax_psd.get()
+                }
+            }
+            
+            with open(label_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            
+            print(f"✓ Skipped file: {audio_file.name} - Reason: {reason}")
+
+            # Recount skipped files
+            self.count_skipped_files()
+            
+            # Move to next file
+            self.next_file()
+
+
     
     def jump_to_file(self):
         """Jump to a specific file number"""
@@ -1996,22 +2006,58 @@ class PeakAnnotator:
         if not self.audio_files:
             return
         
+        # Check if currently playing        
+        was_looping = pysoniq.is_looping()
+        was_playing = was_looping  # If looping, assume it was playing
+        
+        # Auto-finish current syllable if it has points
+        if len(self.current_syllable) >= 2:
+            print("Auto-finishing syllable before navigation...")
+            self.syllables.append(self.current_syllable[:])
+            self.current_syllable = []
+            self.rebuild_annotations()
+        
         if self.changes_made:
             self.save_annotations()
         
+        # Stop current playback
+        pysoniq.stop()
+        
         self.current_file_idx = (self.current_file_idx - 1) % len(self.audio_files)
         self.load_current_file()
+        
+        # Resume playback if it was playing
+        if was_playing:
+            self.play_audio()
     
     def next_file(self):
         """Navigate to next file"""
         if not self.audio_files:
             return
         
+        # Check if currently playing        
+        was_looping = pysoniq.is_looping()
+        was_playing = was_looping  # If looping, assume it was playing
+        
+        # Auto-finish current syllable if it has points
+        if len(self.current_syllable) >= 2:
+            print("Auto-finishing syllable before navigation...")
+            self.syllables.append(self.current_syllable[:])
+            self.current_syllable = []
+            self.rebuild_annotations()
+        
         if self.changes_made:
             self.save_annotations()
         
+        # Stop current playback
+        pysoniq.stop()
+        
         self.current_file_idx = (self.current_file_idx + 1) % len(self.audio_files)
         self.load_current_file()
+        
+        # Resume playback if it was playing
+        if was_playing:
+            self.play_audio()
 
 
 # ===== MAIN ENTRY POINT =====

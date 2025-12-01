@@ -1,5 +1,7 @@
+# Remember to implement this at some point
 # from jellyfish.utils.jelly_funcs import make_daily_directory
 # daily_dir = make_daily_directory()
+
 
 import numpy as np
 import matplotlib
@@ -8,16 +10,20 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.collections
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import librosa
-import librosa.display
+
 from pathlib import Path
 import json
 from natsort import natsorted
-import sounddevice as sd
 
-from yaaat.utils import save_last_directory, load_last_directory
+import pysoniq
+
+try: 
+    from yaaat import utils
+except ImportError: 
+    import utils
 
 
 class ChangepointAnnotator:
@@ -81,7 +87,7 @@ class ChangepointAnnotator:
         # Cache the spectrogram image
         self.spec_image = None
 
-        # Track total across all files
+        # Track totals across all files
         self.total_syllables_across_files = 0
         self.total_skipped_files = 0  
 
@@ -93,6 +99,11 @@ class ChangepointAnnotator:
         self.harmonic_multiplier = tk.DoubleVar(value=2.0)  # For nudging
         self.show_third_harmonic = tk.BooleanVar(value=False)
         self.third_harmonic_multiplier = tk.DoubleVar(value=3.0)
+
+
+        # Playback state
+        self.playback_gain = tk.DoubleVar(value=1.0)
+        self.loop_enabled = False
 
         self.setup_ui()
 
@@ -157,12 +168,101 @@ class ChangepointAnnotator:
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
-        # File management parameters heading
-        ttk.Label(scrollable_frame, text="File Management:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
+        # ===== FILE MANAGEMENT AND PLAYBACK CONTROLS =====
 
-        # File loading
-        ttk.Button(scrollable_frame, text="Load Audio Directory", command=self.load_directory).pack(anchor=tk.W, pady=2)
-        ttk.Button(scrollable_frame, text="Load Test Audio", command=self.load_test_audio).pack(anchor=tk.W, pady=2)
+        # Create horizontal frame for load buttons (left) and play button (right)
+        file_buttons_frame = ttk.Frame(scrollable_frame)
+        file_buttons_frame.pack(fill=tk.X, pady=2)
+
+        # Left side - File Management
+        load_buttons_frame = ttk.Frame(file_buttons_frame)
+        load_buttons_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 5))
+
+        ttk.Label(load_buttons_frame, text="File Management:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
+        ttk.Button(load_buttons_frame, text="Load Audio Directory", command=self.load_directory).pack(anchor=tk.W, pady=2)
+        ttk.Button(load_buttons_frame, text="Load Test Audio", command=self.load_test_audio).pack(anchor=tk.W, pady=2)
+
+        # Vertical separator (centered)
+        ttk.Separator(file_buttons_frame, orient=tk.VERTICAL).grid(row=0, column=1, sticky='ns', padx=10)
+
+        # Right side - Playback Controls
+        play_controls_frame = ttk.Frame(file_buttons_frame)
+        play_controls_frame.grid(row=0, column=2, sticky='nsew', padx=(5, 0))
+
+        ttk.Label(play_controls_frame, text="Playback Controls:", font=('', 9, 'bold')).pack(anchor=tk.CENTER, pady=(0, 2))
+
+        # Container for buttons and gain
+        controls_container = ttk.Frame(play_controls_frame)
+        controls_container.pack(anchor=tk.CENTER)
+
+        # Horizontal button layout (left side)
+        buttons_row = ttk.Frame(controls_container)
+        buttons_row.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Play button
+        play_button = tk.Button(buttons_row, text="▶", 
+                            command=self.play_audio, 
+                            bg='lightgreen', 
+                            font=('', 12, 'bold'),
+                            width=2,
+                            height=1,
+                            relief=tk.RAISED,
+                            cursor='hand2')
+        play_button.pack(side=tk.LEFT, padx=2)
+
+        # Pause button
+        self.pause_button = tk.Button(buttons_row, text="⏸", 
+                                command=self.pause_audio, 
+                                bg='yellow', 
+                                font=('', 12, 'bold'),
+                                width=2,
+                                height=1,
+                                relief=tk.RAISED,
+                                cursor='hand2')
+        self.pause_button.pack(side=tk.LEFT, padx=2)
+
+        # Stop button
+        stop_button = tk.Button(buttons_row, text="⏹", 
+                            command=self.stop_audio, 
+                            bg='lightcoral', 
+                            font=('', 12, 'bold'),
+                            width=2,
+                            height=1,
+                            relief=tk.RAISED,
+                            cursor='hand2')
+        stop_button.pack(side=tk.LEFT, padx=2)
+
+        # Loop button
+        self.loop_button = tk.Button(buttons_row, text="⟳", 
+                            command=self.toggle_loop, 
+                            bg='lightblue', 
+                            font=('', 12, 'bold'),
+                            width=2,
+                            height=1,
+                            relief=tk.RAISED,
+                            cursor='hand2')
+        self.loop_button.pack(side=tk.LEFT, padx=2)
+
+        # Vertical gain fader (right side)
+        gain_frame = ttk.Frame(controls_container)
+        gain_frame.pack(side=tk.LEFT)
+
+        ttk.Label(gain_frame, text="Gain", font=('', 7)).pack()
+
+        self.playback_gain = tk.DoubleVar(value=1.0)
+        gain_scale = ttk.Scale(gain_frame, from_=2.0, to=0.0, 
+                            variable=self.playback_gain,
+                            orient=tk.VERTICAL,
+                            length=60,
+                            command=lambda v: self.update_gain_label())
+        gain_scale.pack()
+
+        self.gain_label = ttk.Label(gain_frame, text="100%", font=('', 7))
+        self.gain_label.pack()
+
+        # Configure grid weights - equal distribution
+        file_buttons_frame.columnconfigure(0, weight=1)
+        file_buttons_frame.columnconfigure(2, weight=1)
 
         self.file_label = ttk.Label(scrollable_frame, text="No files loaded", wraplength=400, font=('', 8))
         self.file_label.pack(fill=tk.X, pady=2)
@@ -571,7 +671,7 @@ class ChangepointAnnotator:
     def _convert_ylim_to_scale(self, fmin_hz, fmax_hz):
         """Convert Hz limits to current scale (mel or linear)"""
         if self.y_scale.get() == 'mel':
-            return librosa.hz_to_mel(fmin_hz), librosa.hz_to_mel(fmax_hz)
+            return utils.hz_to_mel(fmin_hz), utils.hz_to_mel(fmax_hz)
         else:
             return fmin_hz, fmax_hz
 
@@ -1173,7 +1273,7 @@ class ChangepointAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} files")
-        save_last_directory(self.base_audio_dir)
+        utils.save_last_directory(self.base_audio_dir)
 
 
     def load_test_audio(self):
@@ -1212,12 +1312,12 @@ class ChangepointAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} test files")
-        save_last_directory(self.base_audio_dir)
+        utils.save_last_directory(self.base_audio_dir)
 
     def auto_load_directory(self):
         """Auto-load last directory or default test audio on startup"""
         # Try last opened directory first
-        last_dir = load_last_directory()
+        last_dir = utils.load_last_directory()
         if last_dir and last_dir.exists():
             print(f"Auto-loading last directory: {last_dir}")
             # Simulate loading without dialog
@@ -1249,7 +1349,9 @@ class ChangepointAnnotator:
         print(f"Loading {audio_file.name}...")
         
         # Load audio
-        self.y, self.sr = librosa.load(str(audio_file), sr=None)
+        self.y, self.sr = pysoniq.load(str(audio_file))
+        if self.y.ndim > 1:
+            self.y = np.mean(self.y, axis=1)  # Convert to mono if stereo
         
         # Compute spectrogram
         self.compute_spectrogram()
@@ -1412,36 +1514,16 @@ class ChangepointAnnotator:
 
     def compute_spectrogram(self):
         """Compute spectrogram with current parameters"""
-        if self.y_scale.get() == 'mel':
-            # Compute mel spectrogram
-            S = librosa.feature.melspectrogram(
-                y=self.y, 
-                sr=self.sr,
-                n_fft=self.n_fft.get(),
-                hop_length=self.hop_length.get(),
-                fmin=self.fmin_calc.get(),
-                fmax=self.fmax_calc.get(),
-                n_mels=256  # Frequency resolution: number of mel bins, higher = more bands = finer resolution
-            )
-            self.S_db = librosa.power_to_db(S, ref=np.max)
-            self.freqs = librosa.mel_frequencies(n_mels=256, 
-                                                fmin=self.fmin_calc.get(), 
-                                                fmax=self.fmax_calc.get())
-        else:
-            # Compute linear STFT spectrogram
-            S = np.abs(librosa.stft(self.y, n_fft=self.n_fft.get(), 
-                                    hop_length=self.hop_length.get()))
-            
-            freqs = librosa.fft_frequencies(sr=self.sr, n_fft=self.n_fft.get())
-            freq_mask = (freqs >= self.fmin_calc.get()) & (freqs <= self.fmax_calc.get())
-            
-            self.S_db = librosa.amplitude_to_db(S[freq_mask, :], ref=np.max)
-            self.freqs = freqs[freq_mask]
-        
-        self.times = librosa.frames_to_time(
-            np.arange(self.S_db.shape[1]), 
-            sr=self.sr, 
-            hop_length=self.hop_length.get()
+        self.S_db, self.freqs, self.times = utils.compute_spectrogram_unified(
+            self.y, 
+            self.sr,
+            nfft=self.n_fft.get(),
+            hop=self.hop_length.get(),
+            fmin=self.fmin_calc.get(),
+            fmax=self.fmax_calc.get(),
+            scale=self.y_scale.get(),  # 'linear' or 'mel'
+            n_mels=256,
+            orientation='horizontal'
         )
     
     def recompute_spectrogram(self):
@@ -1505,25 +1587,35 @@ class ChangepointAnnotator:
         """
         try:
             print(f"update_display called: recompute_spec={recompute_spec}")
-            
+
             if recompute_spec or self.spec_image is None:
                 # Full redraw - expensive operation
                 self.ax.clear()
-
-                y_axis_param = 'mel' if self.y_scale.get() == 'mel' else 'hz'
                 
-                # Plot spectrogram
-                self.spec_image = librosa.display.specshow(
+                # Plot spectrogram using imshow
+                # extent = [x_min, x_max, y_min, y_max]
+                extent = [
+                    self.times[0], 
+                    self.times[-1],
+                    self.freqs[0],
+                    self.freqs[-1]
+                ]
+                
+                self.spec_image = self.ax.imshow(
                     self.S_db,
-                    x_axis='time',
-                    y_axis=y_axis_param,
-                    sr=self.sr,
-                    hop_length=self.hop_length.get(),
-                    fmin=self.fmin_calc.get(),
-                    fmax=self.fmax_calc.get(),
+                    aspect='auto',
+                    origin='lower',
+                    extent=extent,
                     cmap='magma',
-                    ax=self.ax
+                    interpolation='bilinear'
                 )
+                
+                # Set axis labels
+                self.ax.set_xlabel('Time (s)')
+                if self.y_scale.get() == 'mel':
+                    self.ax.set_ylabel('Frequency (mel)')
+                else:
+                    self.ax.set_ylabel('Frequency (Hz)')
                 
                 # Set display limits
                 ymin, ymax = self._convert_ylim_to_scale(self.fmin_display.get(), self.fmax_display.get())
@@ -1544,11 +1636,13 @@ class ChangepointAnnotator:
             if self.changes_made:
                 saved = ""
             elif self.file_was_annotated:
-                saved = "✓ "  # Green check shown via title
+                saved = "✓ "
             else:
-                saved = "⊙ "  # Circle for new file
+                saved = "⊙ "
             self.ax.set_title(f'{saved}{filename} | {len(self.syllables)} syllables | '
                             f'n_fft={self.n_fft.get()} hop={self.hop_length.get()}')
+            
+            # plot all annotations with correct colors
             
             # plot all annotations with correct colors
             colors = {'onset': 'green', 'offset': 'magenta', 'changepoint': 'cyan'}
@@ -1780,11 +1874,68 @@ class ChangepointAnnotator:
             self.syllables = []
             self.changes_made = True
             self.update_display(recompute_spec=False)
-    
+
+
+
     def play_audio(self):
-        """Play the current audio file"""
+        """Play the current audio file with gain applied"""
         if self.y is not None:
-            sd.play(self.y, self.sr)
+            
+            # Set main gain (will be applied on each loop iteration)
+            pysoniq.set_gain(self.playback_gain.get())
+            pysoniq.play(self.y, self.sr)
+            
+    def pause_audio(self):
+        """Pause audio playback"""        
+        if pysoniq.is_paused():  # This is correct - calling the function
+            pysoniq.resume()
+            # Update pause button appearance
+            if hasattr(self, 'pause_button'):
+                self.pause_button.config(bg='yellow')
+            # Restore loop button if it was enabled
+            import pysoniq.pause as pause_module
+            if pause_module.was_looping() and hasattr(self, 'loop_button'):
+                self.loop_button.config(bg='orange', relief=tk.SUNKEN)
+                self.loop_enabled = True
+        else:
+            pysoniq.pause()
+            # Update pause button appearance
+            if hasattr(self, 'pause_button'):
+                self.pause_button.config(bg='orange')
+
+    def stop_audio(self):
+        """Stop audio playback"""
+        print("DEBUG: stop_audio() called from changepoint_annotator.py")
+        pysoniq.stop()
+        print("DEBUG: pysoniq.stop() completed from changepoint_annotator.py")
+        # Don't reset loop button - just stop playback
+        # User can manually disable loop if desired
+
+    def toggle_loop(self):
+        """Toggle loop mode"""        
+        self.loop_enabled = not self.loop_enabled
+        
+        # Set loop state FIRST
+        pysoniq.set_loop(self.loop_enabled)
+        
+        # Update button appearance
+        if self.loop_enabled:
+            self.loop_button.config(bg='orange', relief=tk.SUNKEN)
+        else:
+            self.loop_button.config(bg='lightblue', relief=tk.RAISED)
+        
+        # Set loop state
+        pysoniq.set_loop(self.loop_enabled)
+        print(f"Loop {'enabled' if self.loop_enabled else 'disabled'}")
+
+    def update_gain_label(self):
+        """Update gain label and master gain when slider moves"""
+        gain = self.playback_gain.get()
+        gain_percent = int(gain * 100)
+        self.gain_label.config(text=f"{gain_percent}%")
+        
+        # Update main gain (takes effect on next loop iteration)
+        pysoniq.set_gain(gain)
     
     def open_save_directory(self):
         """Open the save directory in the system file explorer"""
@@ -1904,6 +2055,11 @@ class ChangepointAnnotator:
             import traceback
             traceback.print_exc()
 
+
+
+    # ===== NAVIGATION =====
+
+    
     def skip_file(self):
         """Mark current file as skipped with reason and create blank annotation file"""
         if not self.audio_files:
@@ -1992,10 +2148,35 @@ class ChangepointAnnotator:
         # Move to next file
         self.next_file()
 
+
+    def jump_to_file(self):
+        """Jump to a specific file number"""
+        try:
+            file_num = int(self.file_number_entry.get())
+            
+            if 1 <= file_num <= len(self.audio_files):
+                if self.changes_made:
+                    self.save_annotations()
+                
+                self.current_file_idx = file_num - 1
+                self.load_current_file()
+            else:
+                messagebox.showwarning("Invalid File Number", 
+                                    f"Please enter a number between 1 and {len(self.audio_files)}")
+                self.update_progress()
+        except ValueError:
+            messagebox.showwarning("Invalid Input", "Please enter a valid number")
+            self.update_progress()
+
+
     def previous_file(self):
         """Navigate to previous file"""
         if not self.audio_files:
             return
+        
+        # Check if currently playing        
+        was_looping = pysoniq.is_looping()
+        was_playing = was_looping  # If looping, assume it was playing
         
         # Auto-finish current syllable if it has points
         if len(self.current_syllable) >= 2:
@@ -2007,14 +2188,25 @@ class ChangepointAnnotator:
         if self.changes_made:
             self.save_annotations()
         
+        # Stop current playback
+        pysoniq.stop()
+        
         self.current_file_idx = (self.current_file_idx - 1) % len(self.audio_files)
         self.load_current_file()
+        
+        # Resume playback if it was playing
+        if was_playing:
+            self.play_audio()
     
     def next_file(self):
         """Navigate to next file"""
         if not self.audio_files:
             return
         
+        # Check if currently playing        
+        was_looping = pysoniq.is_looping()
+        was_playing = was_looping  # If looping, assume it was playing
+        
         # Auto-finish current syllable if it has points
         if len(self.current_syllable) >= 2:
             print("Auto-finishing syllable before navigation...")
@@ -2025,8 +2217,15 @@ class ChangepointAnnotator:
         if self.changes_made:
             self.save_annotations()
         
+        # Stop current playback
+        pysoniq.stop()
+        
         self.current_file_idx = (self.current_file_idx + 1) % len(self.audio_files)
         self.load_current_file()
+        
+        # Resume playback if it was playing
+        if was_playing:
+            self.play_audio()
 
     def start_continuous_nav(self, direction):
         """Start continuous navigation when button held down"""

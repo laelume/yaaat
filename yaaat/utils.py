@@ -2,8 +2,13 @@
 
 import numpy as np
 from scipy.signal import spectrogram, welch
+import json
+from pathlib import Path
 
-# ===== Mel Scale Utilities =====
+
+# ----------------------------------- #
+# ******** SIGNAL PROCESSING ******** #
+# ----------------------------------- #
 
 def hz_to_mel(hz):
     """Convert Hz to mel scale"""
@@ -78,7 +83,8 @@ def apply_mel_scale(S, mel_basis):
     """
     return np.dot(mel_basis, S)
 
-# ===== Unified Spectrogram Computation =====
+
+# ===== Unified Spectrogram Stuff =====
 
 def compute_spectrogram_unified(y, sr, nfft, hop, fmin=0, fmax=None, 
                                 scale='linear', n_mels=256, orientation='horizontal'):
@@ -123,6 +129,7 @@ def compute_spectrogram_unified(y, sr, nfft, hop, fmin=0, fmax=None,
     
     # Apply mel scale if requested
     if scale == 'mel':
+        # Create mel basis for full frequency range
         mel_basis, mel_freqs = create_mel_filterbank(sr, nfft, n_mels, fmin, fmax)
         # Apply mel basis only to masked frequencies
         mel_basis_full = np.zeros((n_mels, len(freqs)))
@@ -142,38 +149,49 @@ def compute_spectrogram_unified(y, sr, nfft, hop, fmin=0, fmax=None,
     
     return S_db, freqs_final, times
 
-def compute_psd(y, sr, nfft_psd=None, hop_psd=None):
+
+# **************** Dual-resolution??? PSD **************** #
+
+
+def compute_psd(y, sr, nfft_psd=None, noverlap_psd=None, hop_psd=None):
     """
-    Welch PSD with auto-adjusted nperseg/noverlap
+    Welch PSD with auto-adjusted nperseg/noverlap to fit signal length
     
     Args:
         y: Audio signal
         sr: Sample rate
         nfft_psd: FFT size for PSD
-        hop_psd: Hop length in samples
+        noverlap_psd: Overlap samples (alternative to hop_psd)
+        hop_psd: Hop length in samples (takes precedence over noverlap)
     
     Returns:
         freqs: Frequency array
         psd_norm: Normalized PSD
     """
     L = len(y)
+    
     nfft_psd = nfft_psd or 1024
+    noverlap_psd = noverlap_psd or 512
     
     # Adapt nperseg for signal length
     nperseg = min(nfft_psd, max(16, L // 2))
     
-    # Calculate noverlap from hop
+    # Calculate noverlap from hop if provided
     if hop_psd is not None:
         noverlap = nperseg - hop_psd
     else:
-        noverlap = nperseg // 2
+        noverlap = min(noverlap_psd, nperseg - 1)
     
     # Ensure noverlap is valid
     noverlap = max(0, min(noverlap, nperseg - 1))
     
     # Compute Welch PSD
     freqs, psd = welch(
-        y, fs=sr, nperseg=nperseg, noverlap=noverlap, scaling="density"
+        y,
+        fs=sr,
+        nperseg=nperseg,
+        noverlap=noverlap,
+        scaling="density"
     )
     
     # Normalize PSD
@@ -181,6 +199,163 @@ def compute_psd(y, sr, nfft_psd=None, hop_psd=None):
     
     return freqs, psd_norm
 
+
 def frames_to_time(frames, sr, hop_length):
     """Convert frame indices to time (replaces librosa.frames_to_time)"""
     return frames * hop_length / sr
+
+
+# ===== Configuration Management =====
+
+def save_last_directory(directory):
+    """Save last opened directory to config file
+    
+    Args:
+        directory: Path object or string
+    """    
+    config_file = Path.home() / '.yaaat_config.json'
+    try:
+        # Load existing config if it exists
+        config = {}
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        
+        # Update last directory
+        config['last_directory'] = str(directory)
+        
+        # Save config
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        print(f"Warning: Could not save config: {e}")
+
+def load_last_directory():
+    """Load last opened directory from config file
+    
+    Returns:
+        Path object if valid directory exists, None otherwise
+    """
+    config_file = Path.home() / '.yaaat_config.json'
+    try:
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+                last_dir = config.get('last_directory', '')
+                if last_dir:
+                    last_dir = Path(last_dir)
+                    if last_dir.exists() and last_dir.is_dir():
+                        return last_dir
+    except Exception as e:
+        print(f"Warning: Could not load config: {e}")
+    return None
+
+
+
+
+
+# ******** LEGACY ******** #
+
+
+# # ----------------------------------------------------------------------
+# # Dual-resolution spectrogram and PSD computation functions
+# # ----------------------------------------------------------------------
+
+# def compute_vertical_spectrogram(y, sr, nfft_spect=None, noverlap_spect=None, hop_spect=None):
+#     """
+#     Spectrogram rotated vertically (freq->x, time->y), safe for short signals
+#     and flipped horizontally (high freq -> right).
+    
+#     Args:
+#         y: Audio signal
+#         sr: Sample rate
+#         nfft_spect: FFT size for spectrogram
+#         noverlap_spect: Overlap samples (alternative to hop_spect)
+#         hop_spect: Hop length in samples (takes precedence over noverlap)
+    
+#     Returns:
+#         S_db_rot: Rotated spectrogram in dB
+#         freqs: Frequency array
+#         times: Time array
+#     """
+#     nfft_spect = nfft_spect or 512
+#     noverlap_spect = noverlap_spect or 256
+
+#     L = len(y)
+
+#     # Adapt nperseg for short signals
+#     nperseg = min(nfft_spect, max(16, L))
+    
+#     # Calculate noverlap from hop if provided
+#     if hop_spect is not None:
+#         noverlap = nperseg - hop_spect
+#     else:
+#         noverlap = min(noverlap_spect, nperseg - 1)
+    
+#     # Ensure noverlap is valid
+#     noverlap = max(0, min(noverlap, nperseg - 1))
+
+#     # Compute spectrogram
+#     freqs, times, S = spectrogram(
+#         y,
+#         fs=sr,
+#         nperseg=nperseg,
+#         noverlap=noverlap,
+#         scaling="density",
+#         mode="magnitude"
+#     )
+
+#     # Convert to dB
+#     S_db = 20 * np.log10(S + 1e-12)
+    
+#     # Rotate so freq->x, time->y, then flip horizontally
+#     S_db_rot = np.fliplr(np.rot90(S_db, k=-1))
+
+#     return S_db_rot, freqs, times
+
+
+# def compute_psd(y, sr, nfft_psd=None, noverlap_psd=None, hop_psd=None):
+#     """
+#     Welch PSD with auto-adjusted nperseg/noverlap to fit signal length
+    
+#     Args:
+#         y: Audio signal
+#         sr: Sample rate
+#         nfft_psd: FFT size for PSD
+#         noverlap_psd: Overlap samples (alternative to hop_psd)
+#         hop_psd: Hop length in samples (takes precedence over noverlap)
+    
+#     Returns:
+#         freqs: Frequency array
+#         psd_norm: Normalized PSD
+#     """
+#     L = len(y)
+    
+#     nfft_psd = nfft_psd or 1024
+#     noverlap_psd = noverlap_psd or 512
+    
+#     # Adapt nperseg for signal length
+#     nperseg = min(nfft_psd, max(16, L // 2))
+    
+#     # Calculate noverlap from hop if provided
+#     if hop_psd is not None:
+#         noverlap = nperseg - hop_psd
+#     else:
+#         noverlap = min(noverlap_psd, nperseg - 1)
+    
+#     # Ensure noverlap is valid
+#     noverlap = max(0, min(noverlap, nperseg - 1))
+    
+#     # Compute Welch PSD
+#     freqs, psd = welch(
+#         y,
+#         fs=sr,
+#         nperseg=nperseg,
+#         noverlap=noverlap,
+#         scaling="density"
+#     )
+    
+#     # Normalize PSD
+#     psd_norm = psd / (psd.max() + 1e-12)
+    
+#     return freqs, psd_norm
