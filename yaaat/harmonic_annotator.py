@@ -1054,41 +1054,84 @@ class HarmonicAnnotator:
         """Handle mouse motion"""
         if event.inaxes != self.ax or event.xdata is None or event.ydata is None:
             return
-        
         # If dragging a region
         if self.selected_region is not None:
-            harmonic_num, region_idx, base_freq, click_freq = self.selected_region
-            freq_shift = event.ydata - click_freq
+            if isinstance(self.selected_region[0], int):
+                # Harmonic region
+                harmonic_num, region_idx, base_freq, click_freq = self.selected_region
+                freq_shift = event.ydata - click_freq
+                
+                time_start, time_end = self.get_region_bounds(region_idx)
+                
+                for frame_data in self.harmonic_tracks:
+                    if time_start <= frame_data['time'] <= time_end:
+                        for harmonic in frame_data['harmonics']:
+                            if harmonic['harmonic_number'] == harmonic_num:
+                                if 'original_frequency' not in harmonic:
+                                    harmonic['original_frequency'] = harmonic['actual_frequency']
+                                harmonic['actual_frequency'] = harmonic['original_frequency'] + freq_shift
+                                break
+            else:
+                # Boundary region
+                boundary_type, region_idx, boundary_idx, click_freq = self.selected_region
+                freq_shift = event.ydata - click_freq
+                
+                time_start, time_end = self.get_region_bounds(region_idx)
+                time_mask = (self.tracker.times >= time_start) & (self.tracker.times <= time_end)
+                
+                if boundary_type == 'valley':
+                    if 'original_valley' not in self.boundary_data:
+                        self.boundary_data['original_valley'] = [b.copy() for b in self.boundary_data['valley_boundaries']]
+                    self.boundary_data['valley_boundaries'][boundary_idx][time_mask] = \
+                        self.boundary_data['original_valley'][boundary_idx][time_mask] + freq_shift
+                elif boundary_type == 'lower':
+                    if 'original_lower' not in self.boundary_data:
+                        self.boundary_data['original_lower'] = self.boundary_data['dynamic_lower'].copy()
+                    self.boundary_data['dynamic_lower'][time_mask] = \
+                        self.boundary_data['original_lower'][time_mask] + freq_shift
+                elif boundary_type == 'upper':
+                    if 'original_upper' not in self.boundary_data:
+                        self.boundary_data['original_upper'] = self.boundary_data['dynamic_upper'].copy()
+                    self.boundary_data['dynamic_upper'][time_mask] = \
+                        self.boundary_data['original_upper'][time_mask] + freq_shift
             
-            # Get time range for this region
-            time_start, time_end = self.get_region_bounds(region_idx)
-            
-            # Update only harmonics in this region
-            for frame_data in self.harmonic_tracks:
-                if time_start <= frame_data['time'] <= time_end:
+            self.update_display(recompute=False)
+            return
+        
+        # If dragging full contour
+        if self.dragging_harmonic is not None:
+            if isinstance(self.dragging_harmonic[0], int):
+                # Harmonic
+                harmonic_num, base_freq, click_freq = self.dragging_harmonic
+                freq_shift = event.ydata - click_freq
+                
+                for frame_data in self.harmonic_tracks:
                     for harmonic in frame_data['harmonics']:
                         if harmonic['harmonic_number'] == harmonic_num:
                             if 'original_frequency' not in harmonic:
                                 harmonic['original_frequency'] = harmonic['actual_frequency']
                             harmonic['actual_frequency'] = harmonic['original_frequency'] + freq_shift
                             break
-            
-            self.update_display(recompute=False)
-            return
-        
-        # If dragging full harmonic contour
-        if self.dragging_harmonic is not None:
-            harmonic_num, base_freq, click_freq = self.dragging_harmonic
-            freq_shift = event.ydata - click_freq
-            
-            # Update ALL time points for this harmonic
-            for frame_data in self.harmonic_tracks:
-                for harmonic in frame_data['harmonics']:
-                    if harmonic['harmonic_number'] == harmonic_num:
-                        if 'original_frequency' not in harmonic:
-                            harmonic['original_frequency'] = harmonic['actual_frequency']
-                        harmonic['actual_frequency'] = harmonic['original_frequency'] + freq_shift
-                        break
+            else:
+                # Boundary
+                boundary_type, boundary_idx, click_freq = self.dragging_harmonic
+                freq_shift = event.ydata - click_freq
+                
+                if boundary_type == 'valley':
+                    if 'original_valley' not in self.boundary_data:
+                        self.boundary_data['original_valley'] = [b.copy() for b in self.boundary_data['valley_boundaries']]
+                    self.boundary_data['valley_boundaries'][boundary_idx] = \
+                        self.boundary_data['original_valley'][boundary_idx] + freq_shift
+                elif boundary_type == 'lower':
+                    if 'original_lower' not in self.boundary_data:
+                        self.boundary_data['original_lower'] = self.boundary_data['dynamic_lower'].copy()
+                    self.boundary_data['dynamic_lower'] = \
+                        self.boundary_data['original_lower'] + freq_shift
+                elif boundary_type == 'upper':
+                    if 'original_upper' not in self.boundary_data:
+                        self.boundary_data['original_upper'] = self.boundary_data['dynamic_upper'].copy()
+                    self.boundary_data['dynamic_upper'] = \
+                        self.boundary_data['original_upper'] + freq_shift
             
             self.update_display(recompute=False)
             return
@@ -1113,20 +1156,78 @@ class HarmonicAnnotator:
         self.zoom_info_label.config(text=f"Time: {abs(width):.3f}s | Freq: {abs(height):.1f} Hz")
         self.canvas.draw_idle()
 
+
+
     def on_release(self, event):
         """Handle mouse release"""
         try:
             # Finalize region correction
             if self.selected_region is not None:
-                harmonic_num, region_idx, base_freq, click_freq = self.selected_region
-                
-                if event.ydata is not None:
-                    freq_shift = event.ydata - click_freq
-                    time_start, time_end = self.get_region_bounds(region_idx)
+                if isinstance(self.selected_region[0], int):
+                    # Harmonic region
+                    harmonic_num, region_idx, base_freq, click_freq = self.selected_region
                     
-                    # Record corrections for this region
-                    for frame_data in self.harmonic_tracks:
-                        if time_start <= frame_data['time'] <= time_end:
+                    if event.ydata is not None:
+                        freq_shift = event.ydata - click_freq
+                        time_start, time_end = self.get_region_bounds(region_idx)
+                        
+                        # Record corrections for this region
+                        for frame_data in self.harmonic_tracks:
+                            if time_start <= frame_data['time'] <= time_end:
+                                for harmonic in frame_data['harmonics']:
+                                    if harmonic['harmonic_number'] == harmonic_num:
+                                        old_freq = harmonic.get('original_frequency', harmonic['actual_frequency'])
+                                        new_freq = harmonic['actual_frequency']
+                                        
+                                        if abs(new_freq - old_freq) > 1.0:
+                                            self.harmonic_corrections.append({
+                                                'time': float(frame_data['time']),
+                                                'harmonic_num': int(harmonic_num),
+                                                'old_freq': float(old_freq),
+                                                'new_freq': float(new_freq),
+                                                'region': int(region_idx)
+                                            })
+                                        
+                                        if 'original_frequency' in harmonic:
+                                            del harmonic['original_frequency']
+                                        break
+                        
+                        self.changes_made = True
+                        print(f"✓ Shifted H{harmonic_num} region {region_idx} by {freq_shift:+.1f} Hz")
+                else:
+                    # Boundary region
+                    boundary_type, region_idx, boundary_idx, click_freq = self.selected_region
+                    
+                    if event.ydata is not None:
+                        freq_shift = event.ydata - click_freq
+                        
+                        # Clean up original storage
+                        if 'original_valley' in self.boundary_data:
+                            del self.boundary_data['original_valley']
+                        if 'original_lower' in self.boundary_data:
+                            del self.boundary_data['original_lower']
+                        if 'original_upper' in self.boundary_data:
+                            del self.boundary_data['original_upper']
+                        
+                        self.changes_made = True
+                        print(f"✓ Shifted {boundary_type} region {region_idx} by {freq_shift:+.1f} Hz")
+                
+                self.selected_region = None
+                self.update_display(recompute=False)
+                self.update_correction_info()
+                return
+            
+            # Finalize full contour correction
+            if self.dragging_harmonic is not None:
+                if isinstance(self.dragging_harmonic[0], int):
+                    # Harmonic contour
+                    harmonic_num, base_freq, click_freq = self.dragging_harmonic
+                    
+                    if event.ydata is not None:
+                        freq_shift = event.ydata - click_freq
+                        
+                        # Record correction for each time point
+                        for frame_data in self.harmonic_tracks:
                             for harmonic in frame_data['harmonics']:
                                 if harmonic['harmonic_number'] == harmonic_num:
                                     old_freq = harmonic.get('original_frequency', harmonic['actual_frequency'])
@@ -1137,50 +1238,32 @@ class HarmonicAnnotator:
                                             'time': float(frame_data['time']),
                                             'harmonic_num': int(harmonic_num),
                                             'old_freq': float(old_freq),
-                                            'new_freq': float(new_freq),
-                                            'region': int(region_idx)
+                                            'new_freq': float(new_freq)
                                         })
                                     
                                     if 'original_frequency' in harmonic:
                                         del harmonic['original_frequency']
                                     break
+                        
+                        self.changes_made = True
+                        print(f"✓ Shifted H{harmonic_num} full contour by {freq_shift:+.1f} Hz")
+                else:
+                    # Boundary contour
+                    boundary_type, boundary_idx, click_freq = self.dragging_harmonic
                     
-                    self.changes_made = True
-                    print(f"✓ Shifted H{harmonic_num} region {region_idx} by {freq_shift:+.1f} Hz")
-                
-                self.selected_region = None
-                self.update_display(recompute=False)
-                self.update_correction_info()
-                return
-            
-            # Finalize full harmonic contour correction
-            if self.dragging_harmonic is not None:
-                harmonic_num, base_freq, click_freq = self.dragging_harmonic
-                
-                if event.ydata is not None:
-                    freq_shift = event.ydata - click_freq
-                    
-                    # Record correction for each time point
-                    for frame_data in self.harmonic_tracks:
-                        for harmonic in frame_data['harmonics']:
-                            if harmonic['harmonic_number'] == harmonic_num:
-                                old_freq = harmonic.get('original_frequency', harmonic['actual_frequency'])
-                                new_freq = harmonic['actual_frequency']
-                                
-                                if abs(new_freq - old_freq) > 1.0:
-                                    self.harmonic_corrections.append({
-                                        'time': float(frame_data['time']),
-                                        'harmonic_num': int(harmonic_num),
-                                        'old_freq': float(old_freq),
-                                        'new_freq': float(new_freq)
-                                    })
-                                
-                                if 'original_frequency' in harmonic:
-                                    del harmonic['original_frequency']
-                                break
-                    
-                    self.changes_made = True
-                    print(f"✓ Shifted H{harmonic_num} full contour by {freq_shift:+.1f} Hz")
+                    if event.ydata is not None:
+                        freq_shift = event.ydata - click_freq
+                        
+                        # Clean up original storage
+                        if 'original_valley' in self.boundary_data:
+                            del self.boundary_data['original_valley']
+                        if 'original_lower' in self.boundary_data:
+                            del self.boundary_data['original_lower']
+                        if 'original_upper' in self.boundary_data:
+                            del self.boundary_data['original_upper']
+                        
+                        self.changes_made = True
+                        print(f"✓ Shifted {boundary_type} boundary by {freq_shift:+.1f} Hz")
                 
                 self.dragging_harmonic = None
                 self.update_display(recompute=False)
@@ -1248,7 +1331,8 @@ class HarmonicAnnotator:
                 except:
                     pass
                 self.drag_rect = None
-    
+
+
     def on_scroll(self, event):
         """Handle mouse wheel zoom"""
         try:
@@ -1351,6 +1435,45 @@ class HarmonicAnnotator:
         closest_num = min(harmonic_distances.keys(), key=lambda k: harmonic_distances[k][0])
         return (closest_num, harmonic_distances[closest_num][1])
 
+
+
+    def find_nearest_boundary(self, click_time, click_freq):
+        """Find nearest valley or dynamic boundary to click location
+        
+        Returns: (boundary_type, boundary_idx) or None
+        boundary_type can be 'valley', 'lower', or 'upper'
+        """
+        if not self.boundary_data:
+            return None
+        
+        min_dist = float('inf')
+        closest = None
+        threshold = 200  # Hz
+        
+        # Check valleys
+        for i, boundary in enumerate(self.boundary_data['valley_boundaries']):
+            freq_at_time = np.interp(click_time, self.tracker.times, boundary)
+            dist = abs(freq_at_time - click_freq)
+            
+            if dist < threshold and dist < min_dist:
+                min_dist = dist
+                closest = ('valley', i)
+        
+        # Check lower boundary
+        freq_at_time = np.interp(click_time, self.tracker.times, self.boundary_data['dynamic_lower'])
+        dist = abs(freq_at_time - click_freq)
+        if dist < threshold and dist < min_dist:
+            min_dist = dist
+            closest = ('lower', 0)
+        
+        # Check upper boundary
+        freq_at_time = np.interp(click_time, self.tracker.times, self.boundary_data['dynamic_upper'])
+        dist = abs(freq_at_time - click_freq)
+        if dist < threshold and dist < min_dist:
+            min_dist = dist
+            closest = ('upper', 0)
+        
+        return closest
 
     def get_region_for_time(self, time):
         """Get region index for a given time based on changepoints"""

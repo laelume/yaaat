@@ -63,7 +63,7 @@ class YAAATApp:
 def main():
     """Entry point for YAAAT"""
     root = tk.Tk()
-    app = YAATApp(root)
+    app = YAAATApp(root)
     root.geometry("1400x900")
     root.mainloop()
 
