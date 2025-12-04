@@ -45,10 +45,11 @@ class ChangepointAnnotator:
         self.freqs = None
         self.times = None
         
-        # Syllable tracking
+        # Tracking audio units
         self.current_syllable = []  # Points in current syllable being built
         self.syllables = []  # List of completed syllables
-        
+        self.contours = []  # List of dicts: {'points': [...], 'onset_idx': int, 'offset_idx': int}
+
         # Annotation data (auto-generated from syllables)
         self.annotations = []
         
@@ -101,6 +102,15 @@ class ChangepointAnnotator:
         self.show_third_harmonic = tk.BooleanVar(value=False)
         self.third_harmonic_multiplier = tk.DoubleVar(value=3.0)
 
+        # Annotation mode
+        self.annotation_mode = tk.StringVar(value='contour')  # 'contour' or 'sequence'
+        self.contours = []  # List of completed contours (each contour is a list of points)
+        self.current_contour = []  # Points in contour being built
+
+
+        # Ctrl+Click onset/offset marking
+        self.pending_onset_idx = None  # Track which point was marked as onset
+
 
         # Playback state
         self.playback_gain = tk.DoubleVar(value=1.0)
@@ -121,7 +131,35 @@ class ChangepointAnnotator:
         control_frame = ttk.LabelFrame(main_frame, text="Controls", padding=10)
         control_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
 
-        # # Direct frame - NO scrolling
+
+        # # ===== MIDDLE ANNOTATIONS COLUMN =====
+        # annotations_column = ttk.LabelFrame(main_frame, text="Annotations", padding=10, width=250)
+        # annotations_column.pack(side=tk.LEFT, fill=tk.Y, padx=(5, 5))
+        # annotations_column.pack_propagate(False)  # Maintain fixed width
+
+        # # Scrollable canvas for annotations
+        # ann_canvas = tk.Canvas(annotations_column, highlightthickness=0)
+        # ann_scrollbar = ttk.Scrollbar(annotations_column, orient="vertical", command=ann_canvas.yview)
+        # self.annotations_inner_frame = ttk.Frame(ann_canvas)
+
+        # ann_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # ann_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # ann_canvas.configure(yscrollcommand=ann_scrollbar.set)
+
+        # ann_canvas.create_window((0, 0), window=self.annotations_inner_frame, anchor="nw")
+        # self.annotations_inner_frame.bind("<Configure>", 
+        #     lambda e: ann_canvas.configure(scrollregion=ann_canvas.bbox("all")))
+
+        # # Mousewheel for annotations
+        # def on_ann_mousewheel(event):
+        #     ann_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        # ann_canvas.bind("<Enter>", lambda e: ann_canvas.bind_all("<MouseWheel>", on_ann_mousewheel))
+        # ann_canvas.bind("<Leave>", lambda e: ann_canvas.unbind_all("<MouseWheel>"))
+
+
+
+
+        # # PREVIOUS VERSION: Direct frame - NO scrolling
         # scrollable_frame = ttk.Frame(control_frame, width=456)
         # scrollable_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -168,6 +206,56 @@ class ChangepointAnnotator:
         instructions.pack(padx=5, pady=(0, 5))
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
+
+
+
+        # ===== ANNOTATION MODE =====
+        ttk.Label(scrollable_frame, text="Annotation Mode:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
+
+        mode_frame = ttk.Frame(scrollable_frame)
+        mode_frame.pack(fill=tk.X, pady=2)
+
+        ttk.Radiobutton(mode_frame, text="Contour Mode", variable=self.annotation_mode, 
+                        value='contour', command=self.switch_annotation_mode).pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(mode_frame, text="Sequence Mode", variable=self.annotation_mode,
+                        value='sequence', command=self.switch_annotation_mode).pack(side=tk.LEFT, padx=5)
+
+        # Mode instructions
+        self.mode_instructions = ttk.Label(scrollable_frame, 
+            text="Contour Mode: Click points → Finish Contour (onset/offset auto-assigned)",
+            wraplength=400, font=('', 8, 'italic'), foreground='blue')
+        self.mode_instructions.pack(pady=2)
+
+        # Sequence display area (hidden in contour mode)
+        self.sequence_display_frame = ttk.LabelFrame(scrollable_frame, text="Contour Sequence", padding=5)
+        self.sequence_display_frame.pack(fill=tk.X, pady=5)
+        self.sequence_display_frame.pack_forget()  # Hidden initially
+
+        # Headers
+        header_frame = ttk.Frame(self.sequence_display_frame)
+        header_frame.pack(fill=tk.X)
+        ttk.Label(header_frame, text="#", font=('', 8, 'bold'), width=3).pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="t_on", font=('', 8, 'bold'), width=7).pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="f_on", font=('', 8, 'bold'), width=7).pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="t_off", font=('', 8, 'bold'), width=7).pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="f_off", font=('', 8, 'bold'), width=7).pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="Δt", font=('', 8, 'bold'), width=6).pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="pts", font=('', 8, 'bold'), width=4).pack(side=tk.LEFT)
+
+        # Scrollable sequence list
+        seq_canvas = tk.Canvas(self.sequence_display_frame, height=200, highlightthickness=0)
+        seq_scrollbar = ttk.Scrollbar(self.sequence_display_frame, orient="vertical", command=seq_canvas.yview)
+        self.sequence_inner_frame = ttk.Frame(seq_canvas)
+
+        seq_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        seq_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        seq_canvas.configure(yscrollcommand=seq_scrollbar.set)
+
+        seq_canvas.create_window((0, 0), window=self.sequence_inner_frame, anchor="nw")
+        self.sequence_inner_frame.bind("<Configure>", 
+            lambda e: seq_canvas.configure(scrollregion=seq_canvas.bbox("all")))
+
+
 
         # ===== FILE MANAGEMENT AND PLAYBACK CONTROLS =====
 
@@ -289,6 +377,9 @@ class ChangepointAnnotator:
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
+
+
+
         # Spectrogram parameters heading
         ttk.Label(scrollable_frame, text="Spectrogram:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
 
@@ -343,7 +434,7 @@ class ChangepointAnnotator:
         buttons = [
             ("Clear Previous", self.clear_last),
             ("Load Audio", self.load_directory), 
-            ("Finish Syllable", self.finish_syllable),
+            ("Finish Contour", self.finish_contour),
             ("Next File", self.next_file),
             
             ("Clear All", self.clear_all),
@@ -500,7 +591,58 @@ class ChangepointAnnotator:
         ttk.Label(psd_param_frame, text="nperseg:").grid(row=1, column=0, sticky=tk.W, padx=2)
         ttk.Entry(psd_param_frame, textvariable=self.nperseg_psd, width=8).grid(row=1, column=1, padx=2)
         
-        # ===== RIGHT SPECTROGRAM PANEL =====
+
+
+
+
+
+
+
+
+
+
+        ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
+
+        # ===== ANNOTATIONS TABLE =====
+        ttk.Label(scrollable_frame, text="Contourzzzzz:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
+
+        # Table header
+        header_frame = ttk.Frame(scrollable_frame)
+        header_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(header_frame, text="#", font=('', 8, 'bold'), width=3).pack(side=tk.LEFT, padx=1)
+        ttk.Label(header_frame, text="t_onset", font=('', 8, 'bold'), width=6).pack(side=tk.LEFT, padx=1)
+        ttk.Label(header_frame, text="t_offset", font=('', 8, 'bold'), width=6).pack(side=tk.LEFT, padx=1)
+        ttk.Label(header_frame, text="f_min", font=('', 8, 'bold'), width=6).pack(side=tk.LEFT, padx=1)
+        ttk.Label(header_frame, text="f_max", font=('', 8, 'bold'), width=6).pack(side=tk.LEFT, padx=1)
+
+        # Scrollable table
+        table_frame = ttk.Frame(scrollable_frame, height=150)
+        table_frame.pack(fill=tk.X, pady=2)
+        table_frame.pack_propagate(False)
+
+        ann_canvas = tk.Canvas(table_frame, highlightthickness=0)
+        ann_scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=ann_canvas.yview)
+        self.annotations_inner_frame = ttk.Frame(ann_canvas)
+
+        ann_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        ann_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ann_canvas.configure(yscrollcommand=ann_scrollbar.set)
+
+        ann_canvas.create_window((0, 0), window=self.annotations_inner_frame, anchor="nw")
+        self.annotations_inner_frame.bind("<Configure>", 
+            lambda e: ann_canvas.configure(scrollregion=ann_canvas.bbox("all")))
+
+        # Mousewheel for annotations table
+        def on_ann_mousewheel(event):
+            ann_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        ann_canvas.bind("<Enter>", lambda e: ann_canvas.bind_all("<MouseWheel>", on_ann_mousewheel))
+        ann_canvas.bind("<Leave>", lambda e: ann_canvas.unbind_all("<MouseWheel>"))
+
+
+
+
+
+        # ===== MAIN SPECTROGRAM PANEL =====
         plot_frame = ttk.Frame(main_frame)
         plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
@@ -550,7 +692,7 @@ class ChangepointAnnotator:
         prev_btn.bind('<ButtonPress-1>', lambda e: self.start_continuous_nav('prev'))
         prev_btn.bind('<ButtonRelease-1>', lambda e: self.stop_continuous_nav())
 
-        tk.Button(button_center_frame, text="Finish Syllable", command=self.finish_syllable, width=12, font=('', 8)).pack(side=tk.LEFT, padx=3)
+        tk.Button(button_center_frame, text="Finish Contour", command=self.finish_contour, width=12, font=('', 8)).pack(side=tk.LEFT, padx=3)
 
         next_btn = tk.Button(button_center_frame, text="Next ►", width=12, font=('', 8))
         next_btn.pack(side=tk.LEFT, padx=3)
@@ -565,7 +707,10 @@ class ChangepointAnnotator:
         self.canvas.mpl_connect('button_release_event', self.on_release)
         self.canvas.mpl_connect('motion_notify_event', self.on_motion)
         self.canvas.mpl_connect('scroll_event', self.on_scroll)
-        
+        self.canvas.mpl_connect('key_release_event', self.on_key_release)
+
+
+
         # Initialize empty plot
         self.ax.set_xlabel('Time (s)', fontsize=8)
         self.ax.set_ylabel('Frequency (Hz)', fontsize=8)
@@ -640,6 +785,7 @@ class ChangepointAnnotator:
             print(f"Audio length: {len(self.y) / self.sr:.2f}s")
         print(f"Current file: {self.current_file_idx + 1}/{len(self.audio_files)}")
         print(f"Syllables: {len(self.syllables)}")
+        print(f"Contours: {len(self.contours)}")
         print(f"Current syllable points: {len(self.current_syllable)}")
         print(f"Total annotations: {len(self.annotations)}")
         print(f"Zoom stack depth: {len(self.zoom_stack)}")
@@ -849,20 +995,354 @@ class ChangepointAnnotator:
                 ylim = self.ax.get_ylim()
                 
                 if xlim[0] <= x0 <= xlim[1] and ylim[0] <= y0 <= ylim[1]:
-                    # FIRST: Check if clicking near existing point (if so, remove it)
-                    if self.remove_nearby_annotation(x0, y0):
-                        print("Removed nearby point")
+                    
+                    # Check for Ctrl key (for onset/offset marking)
+                    import sys
+                    is_ctrl = False
+                    if sys.platform == 'win32':
+                        import ctypes
+                        is_ctrl = bool(ctypes.windll.user32.GetKeyState(0x11) & 0x8000)
                     else:
-                        # Otherwise, add new point to current syllable
-                        self.current_syllable.append({
-                            'time': float(x0),
-                            'freq': float(y0)
-                        })
+                        # Check if ctrl is currently pressed during this event
+                        is_ctrl = hasattr(event, 'key') and event.key in ['control', 'ctrl']
+
+                    if is_ctrl and (self.current_contour or self.contours):
+                        # CTRL+CLICK MODE: Mark onset/offset endpoints in contour
                         
-                        self.changes_made = True
-                        self.rebuild_annotations()
-                        self.update_display(recompute_spec=False)
-                        print(f"+ Point {len(self.current_syllable)}: t={x0:.3f}s, f={y0:.0f}Hz")
+                        if self.pending_onset_idx is None:
+                            # First Ctrl+Click: Find which point was clicked
+                            time_threshold_s = 0.05
+                            freq_threshold_hz = 200
+                            
+                            clicked_info = None
+                            min_dist = float('inf')
+                            
+                            # Check current_contour
+                            for i, point in enumerate(self.current_contour):
+                                time_diff = abs(point['time'] - x0)
+                                freq_diff = abs(point['freq'] - y0)
+                                
+                                if time_diff < time_threshold_s and freq_diff < freq_threshold_hz:
+                                    dist = np.sqrt((time_diff/time_threshold_s)**2 + (freq_diff/freq_threshold_hz)**2)
+                                    if dist < min_dist:
+                                        min_dist = dist
+                                        clicked_info = {
+                                            'point': point,
+                                            'contour_idx': -1,
+                                            'point_idx': i
+                                        }
+                            
+                            # Check finished contours
+                            for contour_idx, contour in enumerate(self.contours):
+                                points = contour if isinstance(contour, list) else contour['points']
+                                for point_idx, point in enumerate(points):
+                                    time_diff = abs(point['time'] - x0)
+                                    freq_diff = abs(point['freq'] - y0)
+                                    
+                                    if time_diff < time_threshold_s and freq_diff < freq_threshold_hz:
+                                        dist = np.sqrt((time_diff/time_threshold_s)**2 + (freq_diff/freq_threshold_hz)**2)
+                                        if dist < min_dist:
+                                            min_dist = dist
+                                            clicked_info = {
+                                                'point': point,
+                                                'contour_idx': contour_idx,
+                                                'point_idx': point_idx
+                                            }
+                            
+                            if clicked_info is None:
+                                print("! No point found near Ctrl+Click")
+                                self.drag_start = None
+                                return
+                            
+                            self.pending_onset_idx = clicked_info
+                            if clicked_info['contour_idx'] == -1:
+                                print(f"✓ Marked first endpoint in CURRENT_CONTOUR, point {clicked_info['point_idx']}")
+                            else:
+                                print(f"✓ Marked first endpoint in FINISHED CONTOUR {clicked_info['contour_idx']+1}, point {clicked_info['point_idx']}")
+                            print(f"  at t={clicked_info['point']['time']:.3f}s, f={clicked_info['point']['freq']:.0f}Hz")
+                            print(f"  → Hold Ctrl and click another point to set other endpoint")
+                            self.drag_start = None
+                            return
+                        
+                        else:
+                            # Second Ctrl+Click
+                            time_threshold_s = 0.05
+                            freq_threshold_hz = 200
+                            
+                            clicked_info = None
+                            min_dist = float('inf')
+                            
+                            # Check current_contour
+                            for i, point in enumerate(self.current_contour):
+                                time_diff = abs(point['time'] - x0)
+                                freq_diff = abs(point['freq'] - y0)
+                                
+                                if time_diff < time_threshold_s and freq_diff < freq_threshold_hz:
+                                    dist = np.sqrt((time_diff/time_threshold_s)**2 + (freq_diff/freq_threshold_hz)**2)
+                                    if dist < min_dist:
+                                        min_dist = dist
+                                        clicked_info = {
+                                            'point': point,
+                                            'contour_idx': -1,
+                                            'point_idx': i
+                                        }
+                            
+                            # Check finished contours
+                            for contour_idx, contour in enumerate(self.contours):
+                                points = contour if isinstance(contour, list) else contour['points']
+                                for point_idx, point in enumerate(points):
+                                    time_diff = abs(point['time'] - x0)
+                                    freq_diff = abs(point['freq'] - y0)
+                                    
+                                    if time_diff < time_threshold_s and freq_diff < freq_threshold_hz:
+                                        dist = np.sqrt((time_diff/time_threshold_s)**2 + (freq_diff/freq_threshold_hz)**2)
+                                        if dist < min_dist:
+                                            min_dist = dist
+                                            clicked_info = {
+                                                'point': point,
+                                                'contour_idx': contour_idx,
+                                                'point_idx': point_idx
+                                            }
+                            
+                            if clicked_info is None:
+                                print("! No point found near second Ctrl+Click")
+                                self.pending_onset_idx = None
+                                self.drag_start = None
+                                return
+
+                            first_info = self.pending_onset_idx
+                            second_info = clicked_info
+
+                            if second_info['contour_idx'] == -1:
+                                print(f"✓ Marked second endpoint in CURRENT_CONTOUR, point {second_info['point_idx']}")
+                            else:
+                                print(f"✓ Marked second endpoint in FINISHED CONTOUR {second_info['contour_idx']+1}, point {second_info['point_idx']}")
+                            print(f"  at t={second_info['point']['time']:.3f}s, f={second_info['point']['freq']:.0f}Hz")
+
+                            # Must be in same contour
+                            if first_info['contour_idx'] != second_info['contour_idx']:
+                                print(f"! Both points must be in same contour")
+                                print(f"  First: {'CURRENT' if first_info['contour_idx']==-1 else f'contour {first_info['contour_idx']+1}'}")
+                                print(f"  Second: {'CURRENT' if second_info['contour_idx']==-1 else f'contour {second_info['contour_idx']+1}'}")
+                                self.pending_onset_idx = None
+                                self.drag_start = None
+                                return
+                            
+                            if first_info['point_idx'] == second_info['point_idx']:
+                                print(f"! Can't use same point as both endpoints")
+                                self.pending_onset_idx = None
+                                self.drag_start = None
+                                return
+                            
+                            contour_idx = first_info['contour_idx']
+                            idx1 = first_info['point_idx']
+                            idx2 = second_info['point_idx']
+                            
+                            # Determine onset/offset by time
+                            if contour_idx == -1:
+                                points = self.current_contour
+                            else:
+                                points = self.contours[contour_idx] if isinstance(self.contours[contour_idx], list) else self.contours[contour_idx]['points']
+                            
+                            if points[idx1]['time'] < points[idx2]['time']:
+                                onset_idx, offset_idx = idx1, idx2
+                            else:
+                                onset_idx, offset_idx = idx2, idx1
+                            
+                            print(f"✓ Marked onset at point {onset_idx}: t={points[onset_idx]['time']:.3f}s")
+                            print(f"✓ Marked offset at point {offset_idx}: t={points[offset_idx]['time']:.3f}s")
+                            
+                            # Update contour with explicit onset/offset markers
+                            # Extract points within bounding box and create new contour
+                            if contour_idx == -1:
+                                # Working with current_contour - extract and remove points
+                                points = self.current_contour
+                                
+                                # Get actual point objects at the clicked indices
+                                onset_point = points[onset_idx]
+                                offset_point = points[offset_idx]
+                                
+                                # Determine bounding box (time AND frequency range)
+                                t_min = min(onset_point['time'], offset_point['time'])
+                                t_max = max(onset_point['time'], offset_point['time'])
+                                f_min = min(onset_point['freq'], offset_point['freq'])
+                                f_max = max(onset_point['freq'], offset_point['freq'])
+                                
+                                print(f"  Bounding box: t=[{t_min:.3f}, {t_max:.3f}]s, f=[{f_min:.0f}, {f_max:.0f}]Hz")
+                                
+                                # Extract all points within this 2D bounding box
+                                extracted_points = []
+                                remaining_points = []
+                                
+                                for point in points:
+                                    if (t_min <= point['time'] <= t_max and 
+                                        f_min <= point['freq'] <= f_max):
+                                        extracted_points.append(point)
+                                    else:
+                                        remaining_points.append(point)
+                                
+                                if len(extracted_points) < 2:
+                                    print(f"! Only {len(extracted_points)} point(s) in bounding box - need at least 2")
+                                    self.pending_onset_idx = None
+                                    self.drag_start = None
+                                    return
+                                
+                                # Find onset/offset indices within extracted points
+                                extracted_onset_idx = None
+                                extracted_offset_idx = None
+                                for i, point in enumerate(extracted_points):
+                                    if (abs(point['time'] - onset_point['time']) < 0.001 and 
+                                        abs(point['freq'] - onset_point['freq']) < 1.0):
+                                        extracted_onset_idx = i
+                                    if (abs(point['time'] - offset_point['time']) < 0.001 and 
+                                        abs(point['freq'] - offset_point['freq']) < 1.0):
+                                        extracted_offset_idx = i
+                                
+                                # If couldn't find exact matches, use first/last by time
+                                if extracted_onset_idx is None or extracted_offset_idx is None:
+                                    sorted_extracted = sorted(range(len(extracted_points)), 
+                                                            key=lambda i: extracted_points[i]['time'])
+                                    extracted_onset_idx = sorted_extracted[0]
+                                    extracted_offset_idx = sorted_extracted[-1]
+                                
+                                # Create new finished contour
+                                self.contours.append({
+                                    'points': extracted_points,
+                                    'onset_idx': extracted_onset_idx,
+                                    'offset_idx': extracted_offset_idx
+                                })
+                                
+                                # Update current_contour - remove extracted points
+                                self.current_contour = remaining_points
+                                
+                                print(f"✓ Created contour with {len(extracted_points)} points")
+                                print(f"  Onset: t={t_min:.3f}s, Offset: t={t_max:.3f}s")
+                                print(f"  Freq range: f=[{f_min:.0f}, {f_max:.0f}]Hz")
+                                print(f"  → {len(remaining_points)} points remaining in current_contour")
+                                
+                            else:
+                                # Working with finished contour - extract subset into NEW contour
+                                if isinstance(self.contours[contour_idx], list):
+                                    points = self.contours[contour_idx]
+                                else:
+                                    points = self.contours[contour_idx]['points']
+                                
+                                # Get the clicked points
+                                onset_point = points[onset_idx]
+                                offset_point = points[offset_idx]
+                                
+                                # Determine bounding box
+                                t_min = min(onset_point['time'], offset_point['time'])
+                                t_max = max(onset_point['time'], offset_point['time'])
+                                f_min = min(onset_point['freq'], offset_point['freq'])
+                                f_max = max(onset_point['freq'], offset_point['freq'])
+                                
+                                print(f"  Extracting from contour {contour_idx+1}, bounding box: t=[{t_min:.3f}, {t_max:.3f}]s, f=[{f_min:.0f}, {f_max:.0f}]Hz")
+                                
+                                # Extract all points within bounding box
+                                extracted_points = []
+                                remaining_points = []
+                                
+                                for point in points:
+                                    if (t_min <= point['time'] <= t_max and 
+                                        f_min <= point['freq'] <= f_max):
+                                        extracted_points.append(point)
+                                    else:
+                                        remaining_points.append(point)
+                                
+                                if len(extracted_points) < 2:
+                                    print(f"! Only {len(extracted_points)} point(s) in bounding box - need at least 2")
+                                    self.pending_onset_idx = None
+                                    self.drag_start = None
+                                    return
+                                
+                                # Find onset/offset indices in extracted points
+                                extracted_onset_idx = None
+                                extracted_offset_idx = None
+                                for i, point in enumerate(extracted_points):
+                                    if (abs(point['time'] - onset_point['time']) < 0.001 and 
+                                        abs(point['freq'] - onset_point['freq']) < 1.0):
+                                        extracted_onset_idx = i
+                                    if (abs(point['time'] - offset_point['time']) < 0.001 and 
+                                        abs(point['freq'] - offset_point['freq']) < 1.0):
+                                        extracted_offset_idx = i
+                                
+                                if extracted_onset_idx is None or extracted_offset_idx is None:
+                                    sorted_extracted = sorted(range(len(extracted_points)), 
+                                                            key=lambda i: extracted_points[i]['time'])
+                                    extracted_onset_idx = sorted_extracted[0]
+                                    extracted_offset_idx = sorted_extracted[-1]
+                                
+                                # Create NEW contour from extracted points
+                                self.contours.append({
+                                    'points': extracted_points,
+                                    'onset_idx': extracted_onset_idx,
+                                    'offset_idx': extracted_offset_idx
+                                })
+                                
+                                # Update source contour - keep remaining points if >= 2, otherwise remove
+                                if len(remaining_points) >= 2:
+                                    if isinstance(self.contours[contour_idx], list):
+                                        self.contours[contour_idx] = remaining_points
+                                    else:
+                                        # Update the dict, recalculate onset/offset indices
+                                        sorted_remaining = sorted(range(len(remaining_points)), 
+                                                                key=lambda i: remaining_points[i]['time'])
+                                        self.contours[contour_idx] = {
+                                            'points': remaining_points,
+                                            'onset_idx': sorted_remaining[0],
+                                            'offset_idx': sorted_remaining[-1]
+                                        }
+                                    print(f"✓ Created NEW contour with {len(extracted_points)} points from contour {contour_idx+1}")
+                                    print(f"  → Updated contour {contour_idx+1}: {len(remaining_points)} points remain")
+                                else:
+                                    self.contours.pop(contour_idx)
+                                    print(f"✓ Created NEW contour with {len(extracted_points)} points from contour {contour_idx+1}")
+                                    print(f"  → Removed contour {contour_idx+1}: < 2 points remaining")
+
+                            self.pending_onset_idx = None
+                            self.changes_made = True
+                            self.rebuild_annotations()
+                            self.update_display(recompute_spec=False)
+                            self.drag_start = None
+                            return
+
+
+                            # # Create new contour from extracted points
+                            # self.contours.append(extracted_points)
+                            
+                            # if source_was_current:
+                            #     self.current_contour = remaining_points
+                            #     print(f"✓ Created contour with {len(extracted_points)} points")
+                            #     print(f"  → {len(remaining_points)} points remaining in current contour")
+                            # else:
+                            #     print(f"✓ Created contour with {len(extracted_points)} points from finished contour")
+                            
+                            # self.pending_onset_idx = None
+                            # self.changes_made = True
+                            # self.rebuild_annotations()
+                            # self.update_display(recompute_spec=False)
+                            # self.drag_start = None
+                            # return
+
+
+                    
+                    else:
+                        # NORMAL CLICK MODE: Check if near existing point or add new point
+                        if self.remove_nearby_annotation(x0, y0):
+                            print("Removed nearby point")
+                            self.pending_onset_idx = None  # Reset onset marking
+                        else:
+                            # Add new point to current contour
+                            self.current_contour.append({
+                                'time': float(x0),
+                                'freq': float(y0)
+                            })
+                            
+                            self.changes_made = True
+                            self.rebuild_annotations()
+                            self.update_display(recompute_spec=False)
+                            print(f"+ Point {len(self.current_contour)}: t={x0:.3f}s, f={y0:.0f}Hz")
                 else:
                     print(f"! Ignoring click outside valid range: x={x0}, y={y0}")
                     self.drag_start = None
@@ -909,6 +1389,17 @@ class ChangepointAnnotator:
                     pass
                 self.drag_rect = None
     
+
+
+
+    def on_key_release(self, event):
+        """Handle key release events - cancel pending operations if Ctrl released"""
+        if event.key in ['control', 'ctrl']:
+            if self.pending_onset_idx is not None:
+                print("✗ Ctrl released - cancelled onset selection")
+                self.pending_onset_idx = None
+                self.update_display(recompute_spec=False)    
+
     def on_scroll(self, event):
         """Handle mouse wheel combo actions"""
         try:
@@ -1049,57 +1540,307 @@ class ChangepointAnnotator:
         print(f"✓ Syllable complete ({len(self.syllables)} total)")
         print(f"  Total annotations now: {len(self.annotations)}")
 
-    def rebuild_annotations(self):
-        """Rebuild annotations list from syllables with auto-labeling"""
-        try:
-            print(f"Rebuilding: {len(self.syllables)} syllables, {len(self.current_syllable)} current points")
 
-            # Combine all syllables and sort by time
-            all_points = []
-            for syllable in self.syllables:
-                all_points.extend(syllable)
-            
-            # Sort points by time
-            all_points.sort(key=lambda x: x['time'])
+    def finish_contour(self, silent=False):
+        """Mark current contour as complete and start new one"""
+        if len(self.current_contour) < 2:
+            if not silent:
+                messagebox.showwarning("Need More Points", 
+                    "Need at least 2 points (onset + offset) to finish contour")
+            return False
+        
+        # Sort points by time
+        sorted_points = sorted(self.current_contour, key=lambda x: x['time'])
+        
+        # Save as completed contour
+        self.contours.append(sorted_points[:])
+        
+        # Clear current contour
+        self.current_contour = []
+        
+        self.changes_made = True
+        self.rebuild_annotations()
+        self.update_display(recompute_spec=False)
+        
+        if not silent:
+            print(f"✓ Contour complete ({len(self.contours)} total)")
+            print(f"  Onset: t={sorted_points[0]['time']:.3f}s, f={sorted_points[0]['freq']:.0f}Hz")
+            print(f"  Offset: t={sorted_points[-1]['time']:.3f}s, f={sorted_points[-1]['freq']:.0f}Hz")
+        
+        return True
+
+
+
+
+
+
+    def extract_contour_from_current(self, onset_idx, offset_idx):
+        """
+        Extract a contour from current_contour between onset and offset indices.
+        
+        Args:
+            onset_idx: Index of onset point in current_contour
+            offset_idx: Index of offset point in current_contour
+        
+        Returns:
+            extracted_contour: List of points from onset to offset (inclusive)
+        """
+        if onset_idx > offset_idx:
+            onset_idx, offset_idx = offset_idx, onset_idx  # Swap if backward
+        
+        # Sort current contour by time to get proper ordering
+        sorted_with_idx = sorted(enumerate(self.current_contour), key=lambda x: x[1]['time'])
+        
+        # Find the indices in sorted order
+        sorted_positions = {orig_idx: sort_idx for sort_idx, (orig_idx, _) in enumerate(sorted_with_idx)}
+        
+        onset_sorted = sorted_positions[onset_idx]
+        offset_sorted = sorted_positions[offset_idx]
+        
+        if onset_sorted > offset_sorted:
+            onset_sorted, offset_sorted = offset_sorted, onset_sorted
+        
+        # Extract the contour slice
+        extracted = [point for _, point in sorted_with_idx[onset_sorted:offset_sorted+1]]
+        
+        # Remove these points from current_contour
+        indices_to_remove = set(orig_idx for orig_idx, _ in sorted_with_idx[onset_sorted:offset_sorted+1])
+        self.current_contour = [p for i, p in enumerate(self.current_contour) if i not in indices_to_remove]
+        
+        return extracted
+
+
+
+
+
+
+
+
+
+
+    def switch_annotation_mode(self):
+        """Switch between syllable and sequence annotation modes"""
+        mode = self.annotation_mode.get()
+        
+        if mode == 'sequence':
+            self.sequence_display_frame.pack(fill=tk.X, pady=5)
+            print("→ Sequence Mode: Define syllable boundaries")
+        else:
+            self.sequence_display_frame.pack_forget()
+            print("→ Syllable Mode: Mark changepoints")
+        
+        self.update_sequence_display()
+
+
+    def update_sequence_display(self):
+        """Update the sequence display with current contours"""
+        # Clear existing rows
+        for widget in self.sequence_inner_frame.winfo_children():
+            widget.destroy()
+        
+        if self.annotation_mode.get() != 'sequence':
+            return
+        
+        # Display each contour as a row
+        for i, contour in enumerate(self.contours):
+            # Handle both old (list) and new (dict) formats
+            if isinstance(contour, dict):
+                points = contour['points']
+                onset_idx = contour.get('onset_idx', 0)
+                offset_idx = contour.get('offset_idx', len(points) - 1)
                 
-            self.annotations = []    
-            # First = onset, last = offset, middle = changepoint
-            for i, point in enumerate(all_points):
-                if i == 0:
-                    label = 'onset'
-                elif i == len(all_points) - 1:  # Change this line
-                    label = 'offset'
+                if len(points) < 2:
+                    continue
+                
+                # Get onset and offset points using the marked indices
+                onset = points[onset_idx]
+                offset = points[offset_idx]
+                
+                # Calculate f_min and f_max from all points
+                all_freqs = [p['freq'] for p in points]
+                f_min = min(all_freqs)
+                f_max = max(all_freqs)
+                
+            else:
+                # Old format - list of points
+                sorted_points = sorted(contour, key=lambda x: x['time'])
+                
+                if len(sorted_points) < 2:
+                    continue
+                
+                onset = sorted_points[0]
+                offset = sorted_points[-1]
+                
+                all_freqs = [p['freq'] for p in contour]
+                f_min = min(all_freqs)
+                f_max = max(all_freqs)
+            
+            # Create row
+            row_frame = ttk.Frame(self.sequence_inner_frame)
+            row_frame.pack(fill=tk.X, pady=1)
+            
+            ttk.Label(row_frame, text=f"{i+1}", font=('', 8), width=3).pack(side=tk.LEFT)
+            ttk.Label(row_frame, text=f"{onset['time']:.3f}", font=('', 8), width=7).pack(side=tk.LEFT)
+            ttk.Label(row_frame, text=f"{offset['time']:.3f}", font=('', 8), width=7).pack(side=tk.LEFT)
+            ttk.Label(row_frame, text=f"{f_min:.0f}", font=('', 8), width=7).pack(side=tk.LEFT)
+            ttk.Label(row_frame, text=f"{f_max:.0f}", font=('', 8), width=7).pack(side=tk.LEFT)
+
+                
+    def rebuild_annotations(self):
+        """Rebuild annotations with automatic onset-offset pairing from contours"""
+        try:
+            print(f"Rebuilding: {len(self.contours)} contours, {len(self.current_contour)} current points")
+            # Build annotations from completed contours
+            self.annotations = []
+            
+            # Add finished contours
+            for contour in self.contours:
+                # Handle both old format (list) and new format (dict with onset/offset markers)
+                if isinstance(contour, dict):
+                    # New format - use explicit onset/offset indices
+                    points = contour['points']
+                    onset_idx = contour.get('onset_idx', 0)
+                    offset_idx = contour.get('offset_idx', len(points) - 1)
+                    
+                    if len(points) < 1:
+                        continue
+                    
+                    for i, point in enumerate(points):
+                        if i == onset_idx:
+                            label = 'onset'
+                            print(f"  DEBUG: Point {i} labeled ONSET: t={point['time']:.3f}s, f={point['freq']:.0f}Hz")
+                        elif i == offset_idx:
+                            label = 'offset'
+                            print(f"  DEBUG: Point {i} labeled OFFSET: t={point['time']:.3f}s, f={point['freq']:.0f}Hz")
+                        else:
+                            label = 'changepoint'
+                        
+                        self.annotations.append({
+                            'time': point['time'],
+                            'freq': point['freq'],
+                            'label': label
+                        })
+                
                 else:
-                    label = 'changepoint'
-                
+                    # Old format (list) - auto-label by time as before
+                    if len(contour) < 1:
+                        continue
+                    
+                    sorted_points = sorted(contour, key=lambda x: x['time'])
+                    
+                    for i, point in enumerate(sorted_points):
+                        if i == 0:
+                            label = 'onset'
+                        elif i == len(sorted_points) - 1:
+                            label = 'offset'
+                        else:
+                            label = 'changepoint'
+                        
+                        self.annotations.append({
+                            'time': point['time'],
+                            'freq': point['freq'],
+                            'label': label
+                        })
+            
+            # Add current contour points (in progress) - all as changepoint for now
+            for point in self.current_contour:
                 self.annotations.append({
                     'time': point['time'],
                     'freq': point['freq'],
-                    'label': label
+                    'label': 'changepoint'
                 })
             
-            # Add current syllable (in progress) - all marked as changepoint for now
-            for point in self.current_syllable:
-                self.annotations.append({
-                    'time': point['time'],
-                    'freq': point['freq'],
-                    'label': 'changepoint'  # Temporary until syllable finished
-                })
-            
-            # Update syllable info label
-            unsaved_points = len(self.current_syllable)
-            saved_syllables = len(self.syllables)
-            saved_points = sum(len(syllable) for syllable in self.syllables)
+            # Update info
+            unsaved_points = len(self.current_contour)
+            saved_contours = len(self.contours)
+            saved_points = sum(len(c['points']) if isinstance(c, dict) else len(c) for c in self.contours)
+
             
             self.syllable_info.config(
-                    text=f"Unsaved Points: {unsaved_points} | Saved Points: {saved_points} | This File: {saved_syllables} syll | Total: {self.total_syllables_across_files} syll")
+                text=f"Unsaved Points: {unsaved_points} | Saved Points: {saved_points} | This File: {saved_contours} contours | Total: {self.total_syllables_across_files} contours")
             
-            print(f"Rebuilt {len(self.annotations)} total annotations")
+            self.update_annotations_list()
+            self.update_sequence_display()
+
+            print(f"Rebuilt {len(self.annotations)} annotations, {len(self.contours)} contours")
             
         except Exception as e:
             print(f"ERROR in rebuild_annotations: {e}")
             import traceback
             traceback.print_exc()
+
+
+
+
+
+    def update_annotations_list(self):
+        """Update the annotations list display"""
+        try:
+            # Clear existing items
+            for widget in self.sequence_inner_frame.winfo_children():
+                widget.destroy()
+            
+            # Add header
+            header_frame = tk.Frame(self.sequence_inner_frame, bg='lightgray')
+            header_frame.pack(fill=tk.X, pady=2)
+            tk.Label(header_frame, text="#", width=5, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
+            tk.Label(header_frame, text="t_onset", width=10, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
+            tk.Label(header_frame, text="t_offset", width=10, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
+            tk.Label(header_frame, text="f_min", width=10, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
+            tk.Label(header_frame, text="f_max", width=10, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
+            
+            # Add rows for each contour
+            for idx, contour in enumerate(self.contours):
+                # Handle both old (list) and new (dict) formats
+                if isinstance(contour, dict):
+                    points = contour['points']
+                    onset_idx = contour.get('onset_idx', 0)
+                    offset_idx = contour.get('offset_idx', len(points) - 1)
+                    
+                    if len(points) < 1:
+                        continue
+                    
+                    onset_point = points[onset_idx]
+                    offset_point = points[offset_idx]
+                    
+                    t_onset = onset_point['time']
+                    t_offset = offset_point['time']
+                    
+                    all_freqs = [p['freq'] for p in points]
+                    f_min = min(all_freqs)
+                    f_max = max(all_freqs)
+                    
+                else:
+                    # Old format - list of points
+                    if len(contour) < 1:
+                        continue
+                        
+                    sorted_points = sorted(contour, key=lambda x: x['time'])
+                    
+                    t_onset = sorted_points[0]['time']
+                    t_offset = sorted_points[-1]['time']
+                    
+                    all_freqs = [p['freq'] for p in contour]
+                    f_min = min(all_freqs)
+                    f_max = max(all_freqs)
+                
+                # Create row
+                row_frame = tk.Frame(self.annotations_inner_frame, bg='white')
+                row_frame.pack(fill=tk.X, pady=1)
+                
+                tk.Label(row_frame, text=f"{idx+1}", width=5, bg='white').pack(side=tk.LEFT)
+                tk.Label(row_frame, text=f"{t_onset:.4f}", width=10, bg='white').pack(side=tk.LEFT)
+                tk.Label(row_frame, text=f"{t_offset:.4f}", width=10, bg='white').pack(side=tk.LEFT)
+                tk.Label(row_frame, text=f"{f_min:.1f}", width=10, bg='white').pack(side=tk.LEFT)
+                tk.Label(row_frame, text=f"{f_max:.1f}", width=10, bg='white').pack(side=tk.LEFT)
+                
+        except Exception as e:
+            print(f"ERROR in update_annotations_list: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+
 
     def remove_nearby_annotation(self, x, y):
         """Remove annotation near the click location"""
@@ -1107,58 +1848,77 @@ class ChangepointAnnotator:
             return False
         
         # Thresholds in interpretable units
-        time_threshold_ms = 10  # milliseconds
-        time_threshold_s = time_threshold_ms / 1000.0  # convert to seconds
-        freq_threshold_hz = 10  # Hz
+        time_threshold_ms = 50  # milliseconds
+        time_threshold_s = time_threshold_ms / 1000.0
+        freq_threshold_hz = 200  # Hz
         
         # Find closest annotation within threshold
         min_dist = float('inf')
         closest_idx = None
-        closest_syllable_idx = None
+        closest_contour_idx = None
         
-        # Check current syllable
-        for i, point in enumerate(self.current_syllable):
+        # Check current contour
+        for i, point in enumerate(self.current_contour):
             time_diff = abs(point['time'] - x)
             freq_diff = abs(point['freq'] - y)
             
-            # Check if within thresholds
             if time_diff < time_threshold_s and freq_diff < freq_threshold_hz:
-                # Calculate combined distance for finding closest
                 dist = np.sqrt((time_diff/time_threshold_s)**2 + (freq_diff/freq_threshold_hz)**2)
                 if dist < min_dist:
                     min_dist = dist
                     closest_idx = i
-                    closest_syllable_idx = -1  # Current syllable
+                    closest_contour_idx = -1
         
-        # Check completed syllables
-        for syll_idx, syllable in enumerate(self.syllables):
-            for point_idx, point in enumerate(syllable):
+        # Check completed contours
+        for contour_idx, contour in enumerate(self.contours):
+            # Handle both dict and list formats
+            if isinstance(contour, dict):
+                points = contour['points']
+            else:
+                points = contour
+            
+            for point_idx, point in enumerate(points):
                 time_diff = abs(point['time'] - x)
                 freq_diff = abs(point['freq'] - y)
                 
-                # Check if within thresholds
                 if time_diff < time_threshold_s and freq_diff < freq_threshold_hz:
-                    # Calculate combined distance for finding closest
                     dist = np.sqrt((time_diff/time_threshold_s)**2 + (freq_diff/freq_threshold_hz)**2)
                     if dist < min_dist:
                         min_dist = dist
                         closest_idx = point_idx
-                        closest_syllable_idx = syll_idx
+                        closest_contour_idx = contour_idx
         
         # Remove the closest point
         if closest_idx is not None:
-            if closest_syllable_idx == -1:
-                # Remove from current syllable
-                removed = self.current_syllable.pop(closest_idx)
-                print(f"- Removed point from current syllable: t={removed['time']:.3f}s")
+            if closest_contour_idx == -1:
+                # Remove from current contour
+                removed = self.current_contour.pop(closest_idx)
+                print(f"✗ Removed point from current contour: t={removed['time']:.3f}s, f={removed['freq']:.0f}Hz")
             else:
-                # Remove from completed syllable
-                removed = self.syllables[closest_syllable_idx].pop(closest_idx)
-                print(f"- Removed point from syllable {closest_syllable_idx}: t={removed['time']:.3f}s")
-                # If syllable now has < 2 points, remove entire syllable
-                if len(self.syllables[closest_syllable_idx]) < 2:
-                    self.syllables.pop(closest_syllable_idx)
-                    print(f"  Removed entire syllable {closest_syllable_idx} (< 2 points)")
+                # Remove from completed contour
+                if isinstance(self.contours[closest_contour_idx], dict):
+                    points = self.contours[closest_contour_idx]['points']
+                    removed = points.pop(closest_idx)
+                    
+                    # If contour now has < 2 points, remove entire contour
+                    if len(points) < 2:
+                        self.contours.pop(closest_contour_idx)
+                        print(f"✗ Removed entire contour {closest_contour_idx+1} (< 2 points)")
+                    else:
+                        # Recalculate onset/offset indices after removal
+                        if closest_idx <= self.contours[closest_contour_idx]['onset_idx']:
+                            self.contours[closest_contour_idx]['onset_idx'] = max(0, self.contours[closest_contour_idx]['onset_idx'] - 1)
+                        if closest_idx <= self.contours[closest_contour_idx]['offset_idx']:
+                            self.contours[closest_contour_idx]['offset_idx'] = max(0, self.contours[closest_contour_idx]['offset_idx'] - 1)
+                        print(f"✗ Removed point from contour {closest_contour_idx+1}: t={removed['time']:.3f}s, f={removed['freq']:.0f}Hz")
+                else:
+                    # Old list format
+                    removed = self.contours[closest_contour_idx].pop(closest_idx)
+                    if len(self.contours[closest_contour_idx]) < 2:
+                        self.contours.pop(closest_contour_idx)
+                        print(f"✗ Removed entire contour {closest_contour_idx+1} (< 2 points)")
+                    else:
+                        print(f"✗ Removed point from contour {closest_contour_idx+1}: t={removed['time']:.3f}s, f={removed['freq']:.0f}Hz")
             
             self.changes_made = True
             self.rebuild_annotations()
@@ -1167,9 +1927,17 @@ class ChangepointAnnotator:
         
         return False
 
+
     def count_total_syllables(self):
         """Count total syllables across all annotation files"""
-        self.total_syllables_across_files = 0
+
+        # Early return if label_dir not set
+        if self.label_dir is None:
+            self.total_syllables_across_files = 0
+            return
+        
+        # self.total_syllables_across_files = 0
+        
         for audio_file in self.audio_files:
             relative_path = audio_file.relative_to(self.base_audio_dir).parent
             filename_prefix = str(relative_path).replace('/', '_').replace('\\', '_')
@@ -1189,7 +1957,14 @@ class ChangepointAnnotator:
 
     def count_skipped_files(self):
         """Count total skipped files across all annotation files"""
-        self.total_skipped_files = 0
+
+        # Early return if label_dir not set
+        if self.label_dir is None:
+            self.total_skipped_files = 0
+            return
+
+        # self.total_skipped_files = 0
+
         for audio_file in self.audio_files:
             relative_path = audio_file.relative_to(self.base_audio_dir).parent
             filename_prefix = str(relative_path).replace('/', '_').replace('\\', '_')
@@ -1321,9 +2096,14 @@ class ChangepointAnnotator:
         last_dir = utils.load_last_directory()
         if last_dir and last_dir.exists():
             print(f"Auto-loading last directory: {last_dir}")
+            
+            # Force display update after auto-load
+            self.root.after(100, lambda: self.update_display(recompute_spec=True))
+            
             # Simulate loading without dialog
             self.audio_files = natsorted(last_dir.rglob('*.wav'))
             self.base_audio_dir = last_dir
+            
             if self.audio_files:
                 # Use default annotation location
                 dataset_name = last_dir.name
@@ -1854,18 +2634,20 @@ class ChangepointAnnotator:
             self.update_progress()  # Reset to current file
 
     def clear_last(self):
-        """Remove the last point from current syllable"""
-        if self.current_syllable:
-            self.current_syllable.pop()
+        """Remove the last point from current contour or undo last contour"""
+        if self.current_contour:
+            self.current_contour.pop()
             self.changes_made = True
             self.rebuild_annotations()
             self.update_display(recompute_spec=False)
-        elif self.syllables:
-            # If no current syllable, undo last completed syllable
-            self.current_syllable = self.syllables.pop()
+            print(f"Removed point from current contour ({len(self.current_contour)} remaining)")
+        elif self.contours:
+            # Restore last completed contour to current
+            self.current_contour = self.contours.pop()
             self.changes_made = True
             self.rebuild_annotations()
             self.update_display(recompute_spec=False)
+            print(f"↶ Restored last contour to editing ({len(self.current_contour)} points)")
     
     def clear_all(self):
         """Clear all annotations"""
