@@ -1,3 +1,5 @@
+# yaaat/utils.py
+
 """Shared utility functions for YAAAT annotation tools"""
 
 import numpy as np

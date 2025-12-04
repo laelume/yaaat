@@ -6,6 +6,7 @@
 from .changepoint_annotator import ChangepointAnnotator, main
 from .peak_annotator import PeakAnnotator
 from .harmonic_annotator import HarmonicAnnotator
+from .sequence_annotator import SequenceAnnotator
 from .main import YAAATApp, main
 
 __version__ = "0.1.8"
