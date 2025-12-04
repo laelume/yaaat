@@ -54,9 +54,9 @@ class ChangepointAnnotator:
         self.annotations = []
         
         # STFT/Spectrogram parameters
-        self.n_fft = tk.IntVar(value=1024)
-        self.hop_length = tk.IntVar(value=256)
-        self.fmin_calc = tk.IntVar(value=500)
+        self.n_fft = tk.IntVar(value=256)
+        self.hop_length = tk.IntVar(value=64)
+        self.fmin_calc = tk.IntVar(value=400)
         self.fmax_calc = tk.IntVar(value=16000)
         self.y_scale = tk.StringVar(value='linear')
         
@@ -69,7 +69,11 @@ class ChangepointAnnotator:
         # Display/plotting limits
         self.fmin_display = tk.IntVar(value=500)
         self.fmax_display = tk.IntVar(value=8000)
-        
+
+        # Playback state
+        self.playback_gain = tk.DoubleVar(value=1.0)
+        self.loop_enabled = False
+
         # Zoom state
         self.zoom_stack = []
         
@@ -77,7 +81,8 @@ class ChangepointAnnotator:
         self.drag_start = None
         self.drag_rect = None
         self.dragging_harmonic = None
-        
+        self.rect = None
+
         # Double-click detection
         self.last_click_time = 0
         self.last_click_pos = None
@@ -107,14 +112,14 @@ class ChangepointAnnotator:
         self.contours = []  # List of completed contours (each contour is a list of points)
         self.current_contour = []  # Points in contour being built
 
-
         # Ctrl+Click onset/offset marking
         self.pending_onset_idx = None  # Track which point was marked as onset
 
+        # Lasso selection state
+        self.lasso_mode = False
+        self.lasso_points = []  # List of (x, y) vertices for polygon
+        self.lasso_lines = []  # Visual feedback lines
 
-        # Playback state
-        self.playback_gain = tk.DoubleVar(value=1.0)
-        self.loop_enabled = False
 
         self.setup_ui()
 
@@ -202,7 +207,8 @@ class ChangepointAnnotator:
 
         # Instructions
         ttk.Label(scrollable_frame, text="Instructions:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
-        instructions = ttk.Label(scrollable_frame, text="• Click: add point\n• Click near existing point: remove point\n• Click + Drag: zoom to region\n• Right-click: undo zoom\n• Ctrl + scroll: horizontal zoom", wraplength=400, font=('', 8))
+        instructions = ttk.Label(scrollable_frame, text="• Click: add point\n• Click near existing point: remove point\n• Click + Drag: zoom to region\n• Right-click: undo zoom\n• Ctrl + scroll: horizontal zoom\n• Ctrl + Click: lasso selection (double-click/Enter to finish)", wraplength=400, font=('', 8))
+
         instructions.pack(padx=5, pady=(0, 5))
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
@@ -389,7 +395,7 @@ class ChangepointAnnotator:
         nfft_frame.pack(fill=tk.X, expand=True, pady=2)
 
         self.nfft_buttons = []
-        for nfft in [256, 512, 1024, 2048, 4096]:
+        for nfft in [128, 256, 512, 1024, 2048, 4096]:
             btn = tk.Button(nfft_frame, text=str(nfft), width=5,command=lambda n=nfft: self.change_nfft(n))
             btn.pack(side=tk.LEFT, padx=2)
             self.nfft_buttons.append((btn, nfft))
@@ -399,7 +405,7 @@ class ChangepointAnnotator:
         hop_frame.pack(fill=tk.X, pady=2)
 
         self.hop_buttons = []
-        for hop in [32, 64, 128, 256, 512]:
+        for hop in [16, 32, 64, 128, 256, 512]:
             btn = tk.Button(hop_frame, text=str(hop), width=5,command=lambda h=hop: self.change_hop(h))
             btn.pack(side=tk.LEFT, padx=2)
             self.hop_buttons.append((btn, hop))
@@ -858,10 +864,79 @@ class ChangepointAnnotator:
                 self.reset_double_click_tracking()
             return
         
-        # Left click - check if near harmonic box edge first
+
+        # Left click - check for Ctrl key
         if event.button == 1:
-            # Check if clicking near any harmonic box edge
-            if self.show_bounding_box.get() and self.annotations:
+            import sys
+            is_ctrl = False
+            if sys.platform == 'win32':
+                import ctypes
+                is_ctrl = bool(ctypes.windll.user32.GetKeyState(0x11) & 0x8000)
+            else:
+                is_ctrl = hasattr(event, 'key') and event.key in ['control', 'ctrl']
+
+
+            # If in lasso mode (already started), continue adding to lasso path
+            if self.lasso_mode:
+                # This will be handled in on_motion as a drag
+                self.drag_start = (event.xdata, event.ydata)
+                return
+
+
+            # Ctrl pressed - CHECK WHAT TYPE OF CTRL+CLICK THIS IS
+            if is_ctrl and (self.current_contour or self.contours):
+                # Check if clicking near an existing point (for onset/offset marking)
+                time_threshold_s = 0.02  # 20ms
+                freq_threshold_hz = 100  # 100Hz
+                
+                clicked_near_point = False
+                
+                # Check current_contour
+                for i, point in enumerate(self.current_contour):
+                    time_diff = abs(point['time'] - event.xdata)
+                    freq_diff = abs(point['freq'] - event.ydata)
+                    
+                    if time_diff < time_threshold_s and freq_diff < freq_threshold_hz:
+                        clicked_near_point = True
+                        break
+                
+                # Check finished contours
+                if not clicked_near_point:
+                    for contour in self.contours:
+                        points = contour if isinstance(contour, list) else contour['points']
+                        for point in points:
+                            time_diff = abs(point['time'] - event.xdata)
+                            freq_diff = abs(point['freq'] - event.ydata)
+                            
+                            if time_diff < time_threshold_s and freq_diff < freq_threshold_hz:
+                                clicked_near_point = True
+                                break
+                        if clicked_near_point:
+                            break
+                
+                if clicked_near_point:
+                    # Ctrl+Click near a point = endpoint marking mode
+                    # Set drag_start so on_release can handle it
+                    self.drag_start = (event.xdata, event.ydata)
+                    print(f"✓ Ctrl+Click near point - waiting for release to mark endpoint")
+                    return
+                else:
+                    # Ctrl+Click NOT near a point = start lasso mode
+                    self.lasso_mode = True
+                    self.lasso_points = [(event.xdata, event.ydata)]
+                    self.drag_start = (event.xdata, event.ydata)
+                    
+                    # CRITICAL: Clear any existing zoom rectangle
+                    if self.drag_rect is not None:
+                        self.drag_rect.remove()
+                        self.drag_rect = None
+                    
+                    print(f"✓ Lasso mode started - drag to draw selection region")
+                    return
+            
+
+            # Check if clicking near harmonic box edge (when NOT in lasso mode and NOT ctrl)
+            if not is_ctrl and self.show_bounding_box.get() and self.annotations:
                 times = [ann['time'] for ann in self.annotations]
                 freqs = [ann['freq'] for ann in self.annotations]
                 t_min, t_max = min(times), max(times)
@@ -899,12 +974,183 @@ class ChangepointAnnotator:
                     print(f"Grabbed {self.harmonics[harmonic_idx]['name']} harmonic {edge_type} edge (distance: {closest_dist:.1f} Hz)")
                     return
             
+            
             # If not dragging harmonic, normal behavior (zoom or annotate)
             self.drag_start = (event.xdata, event.ydata)
-    
+
+
+
+
+    def draw_lasso_preview(self):
+        """Draw preview of lasso path as it's being drawn"""
+        # Remove old lasso lines
+        for line in self.lasso_lines:
+            try:
+                line.remove()
+            except:
+                pass
+        self.lasso_lines = []
+        
+        if len(self.lasso_points) < 2:
+            return
+        
+        # Draw the path as a continuous line
+        xs = [p[0] for p in self.lasso_points]
+        ys = [p[1] for p in self.lasso_points]
+        
+        line = self.ax.plot(xs, ys, 'y-', linewidth=2, alpha=0.7)[0]
+        self.lasso_lines.append(line)
+        
+        # Draw starting point as a circle
+        circle = self.ax.plot(self.lasso_points[0][0], self.lasso_points[0][1], 
+                            'yo', markersize=10, markeredgecolor='black', markeredgewidth=2)[0]
+        self.lasso_lines.append(circle)
+        
+        self.canvas.draw_idle()
+
+
+    def point_in_polygon(self, x, y, polygon):
+        """Check if point (x, y) is inside polygon using ray casting algorithm"""
+        n = len(polygon)
+        inside = False
+        
+        p1x, p1y = polygon[0]
+        for i in range(1, n + 1):
+            p2x, p2y = polygon[i % n]
+            if y > min(p1y, p2y):
+                if y <= max(p1y, p2y):
+                    if x <= max(p1x, p2x):
+                        if p1y != p2y:
+                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                        if p1x == p2x or x <= xinters:
+                            inside = not inside
+            p1x, p1y = p2x, p2y
+        
+        return inside
+
+    def finish_lasso_selection(self):
+        """Extract points within lasso polygon and create contour"""
+        if len(self.lasso_points) < 3:
+            print("! Need at least 2 vertices to define a selection region")
+            self.cancel_lasso()
+            return
+        
+        print(f"✓ Finishing lasso selection with {len(self.lasso_points)} vertices")
+        
+        # Find all points (from current_contour and finished contours) inside polygon
+        extracted_points = []
+        source_info = []  # Track where each point came from
+        
+        # Check current_contour
+        for i, point in enumerate(self.current_contour):
+            if self.point_in_polygon(point['time'], point['freq'], self.lasso_points):
+                extracted_points.append(point)
+                source_info.append(('current', i))
+        
+        # Check finished contours
+        for contour_idx, contour in enumerate(self.contours):
+            points = contour['points'] if isinstance(contour, dict) else contour
+            for point_idx, point in enumerate(points):
+                if self.point_in_polygon(point['time'], point['freq'], self.lasso_points):
+                    extracted_points.append(point)
+                    source_info.append(('contour', contour_idx, point_idx))
+        
+        if len(extracted_points) < 2:
+            print(f"! Only {len(extracted_points)} point(s) found in lasso region - need at least 2")
+            self.cancel_lasso()
+            return
+        
+        # Sort extracted points by time
+        sorted_with_source = sorted(zip(extracted_points, source_info), key=lambda x: x[0]['time'])
+        extracted_points = [p for p, _ in sorted_with_source]
+        
+        # Determine onset/offset (first and last in time)
+        onset_idx = 0
+        offset_idx = len(extracted_points) - 1
+        
+        # Create new contour WITH PROPER STRUCTURE
+        new_contour = {
+            'points': extracted_points,
+            'onset_idx': onset_idx,
+            'offset_idx': offset_idx
+        }
+        self.contours.append(new_contour)
+        
+        # Remove extracted points from their sources
+        # Build sets of indices to remove (process in reverse to avoid index shifting)
+        current_indices_to_remove = set()
+        contour_points_to_remove = {}  # contour_idx -> set of point indices
+        
+        for _, source in sorted_with_source:
+            if source[0] == 'current':
+                current_indices_to_remove.add(source[1])
+            else:  # 'contour'
+                contour_idx = source[1]
+                point_idx = source[2]
+                if contour_idx not in contour_points_to_remove:
+                    contour_points_to_remove[contour_idx] = set()
+                contour_points_to_remove[contour_idx].add(point_idx)
+        
+        # Remove from current_contour
+        self.current_contour = [p for i, p in enumerate(self.current_contour) 
+                                if i not in current_indices_to_remove]
+        
+        # Remove from finished contours (reverse order to avoid index issues)
+        for contour_idx in sorted(contour_points_to_remove.keys(), reverse=True):
+            if isinstance(self.contours[contour_idx], dict):
+                points = self.contours[contour_idx]['points']
+                remaining = [p for i, p in enumerate(points) 
+                            if i not in contour_points_to_remove[contour_idx]]
+                
+                if len(remaining) < 2:
+                    self.contours.pop(contour_idx)
+                    print(f"  → Removed contour {contour_idx+1} (< 2 points remaining)")
+                else:
+                    # Recalculate onset/offset indices
+                    sorted_indices = sorted(range(len(remaining)), key=lambda i: remaining[i]['time'])
+                    self.contours[contour_idx] = {
+                        'points': remaining,
+                        'onset_idx': sorted_indices[0],
+                        'offset_idx': sorted_indices[-1]
+                    }
+                    print(f"  → Updated contour {contour_idx+1}: {len(remaining)} points remain")
+        
+        print(f"✓ Created contour with {len(extracted_points)} points from lasso selection")
+        print(f"  Onset: t={extracted_points[onset_idx]['time']:.3f}s, f={extracted_points[onset_idx]['freq']:.0f}Hz")
+        print(f"  Offset: t={extracted_points[offset_idx]['time']:.3f}s, f={extracted_points[offset_idx]['freq']:.0f}Hz")
+        
+        self.cancel_lasso()
+        self.changes_made = True
+        self.rebuild_annotations()  # This will assign onset/offset labels properly
+        self.update_display(recompute_spec=False)
+
+
+    def cancel_lasso(self):
+        """Cancel lasso selection and clean up"""
+        self.lasso_mode = False
+        self.lasso_points = []
+        
+        # Remove visual feedback
+        for line in self.lasso_lines:
+            try:
+                line.remove()
+            except:
+                pass
+        self.lasso_lines = []
+        
+        self.canvas.draw_idle()
+
+
+
     def on_motion(self, event):
-        """Handle mouse motion - draw zoom rectangle or drag harmonic edge"""
+        """Handle mouse motion - draw zoom rectangle, drag harmonic edge, or draw lasso"""
         if event.inaxes != self.ax or event.xdata is None or event.ydata is None:
+            return
+        
+        # If dragging lasso path
+        if self.lasso_mode and self.drag_start is not None:
+            self.lasso_points.append((event.xdata, event.ydata))
+            self.draw_lasso_preview()
             return
         
         # If dragging harmonic edge
@@ -929,12 +1175,16 @@ class ChangepointAnnotator:
         # Normal zoom rectangle drawing
         if self.drag_start is None:
             return
-        
+
+        # CRITICAL: Don't draw zoom box if in lasso mode
+        if self.lasso_mode:
+            return
+
         # Remove previous rectangle
         if self.drag_rect is not None:
             self.drag_rect.remove()
             self.drag_rect = None
-        
+
         # Draw new rectangle
         x0, y0 = self.drag_start
         width = event.xdata - x0
@@ -952,9 +1202,21 @@ class ChangepointAnnotator:
 
         self.canvas.draw_idle()
     
+
     def on_release(self, event):
         """Handle mouse button release"""
         try:
+            # If releasing lasso drag, finish selection
+            if self.lasso_mode:
+                # Auto-close the loop
+                if len(self.lasso_points) >= 2:
+                    self.finish_lasso_selection()
+                else:
+                    print("! Lasso path too short - need to drag through more points")
+                    self.cancel_lasso()
+                self.drag_start = None
+                return
+            
             # If was dragging harmonic, finalize
             if self.dragging_harmonic is not None:
                 self.dragging_harmonic = None
@@ -1011,8 +1273,8 @@ class ChangepointAnnotator:
                         
                         if self.pending_onset_idx is None:
                             # First Ctrl+Click: Find which point was clicked
-                            time_threshold_s = 0.05
-                            freq_threshold_hz = 200
+                            time_threshold_s = 0.02  # 20ms
+                            freq_threshold_hz = 100  # 100Hz
                             
                             clicked_info = None
                             min_dist = float('inf')
@@ -1151,9 +1413,9 @@ class ChangepointAnnotator:
                             
                             print(f"✓ Marked onset at point {onset_idx}: t={points[onset_idx]['time']:.3f}s")
                             print(f"✓ Marked offset at point {offset_idx}: t={points[offset_idx]['time']:.3f}s")
-                            
+
                             # Update contour with explicit onset/offset markers
-                            # Extract points within bounding box and create new contour
+                            # Extract points within temporal range and create new contour
                             if contour_idx == -1:
                                 # Working with current_contour - extract and remove points
                                 points = self.current_contour
@@ -1162,48 +1424,35 @@ class ChangepointAnnotator:
                                 onset_point = points[onset_idx]
                                 offset_point = points[offset_idx]
                                 
-                                # Determine bounding box (time AND frequency range)
-                                t_min = min(onset_point['time'], offset_point['time'])
-                                t_max = max(onset_point['time'], offset_point['time'])
-                                f_min = min(onset_point['freq'], offset_point['freq'])
-                                f_max = max(onset_point['freq'], offset_point['freq'])
+                                # Determine which index is earlier in time
+                                points_sorted_by_time = sorted(enumerate(points), key=lambda x: x[1]['time'])
+                                onset_time_rank = next(i for i, (idx, _) in enumerate(points_sorted_by_time) if idx == onset_idx)
+                                offset_time_rank = next(i for i, (idx, _) in enumerate(points_sorted_by_time) if idx == offset_idx)
                                 
-                                print(f"  Bounding box: t=[{t_min:.3f}, {t_max:.3f}]s, f=[{f_min:.0f}, {f_max:.0f}]Hz")
+                                if onset_time_rank > offset_time_rank:
+                                    onset_time_rank, offset_time_rank = offset_time_rank, onset_time_rank
+                                    onset_idx, offset_idx = offset_idx, onset_idx
+                                    onset_point, offset_point = offset_point, onset_point
                                 
-                                # Extract all points within this 2D bounding box
-                                extracted_points = []
-                                remaining_points = []
+                                print(f"  Extracting points by time rank: {onset_time_rank} to {offset_time_rank}")
                                 
-                                for point in points:
-                                    if (t_min <= point['time'] <= t_max and 
-                                        f_min <= point['freq'] <= f_max):
-                                        extracted_points.append(point)
-                                    else:
-                                        remaining_points.append(point)
+                                # Extract points within this time-sorted range
+                                extracted_indices = {idx for rank, (idx, _) in enumerate(points_sorted_by_time) 
+                                                     if onset_time_rank <= rank <= offset_time_rank}
+                                extracted_points = [points[i] for i in range(len(points)) if i in extracted_indices]
+                                remaining_points = [points[i] for i in range(len(points)) if i not in extracted_indices]
                                 
                                 if len(extracted_points) < 2:
-                                    print(f"! Only {len(extracted_points)} point(s) in bounding box - need at least 2")
+                                    print(f"! Only {len(extracted_points)} point(s) between clicked points - need at least 2")
                                     self.pending_onset_idx = None
                                     self.drag_start = None
                                     return
                                 
-                                # Find onset/offset indices within extracted points
-                                extracted_onset_idx = None
-                                extracted_offset_idx = None
-                                for i, point in enumerate(extracted_points):
-                                    if (abs(point['time'] - onset_point['time']) < 0.001 and 
-                                        abs(point['freq'] - onset_point['freq']) < 1.0):
-                                        extracted_onset_idx = i
-                                    if (abs(point['time'] - offset_point['time']) < 0.001 and 
-                                        abs(point['freq'] - offset_point['freq']) < 1.0):
-                                        extracted_offset_idx = i
+                                print(f"  Temporal range: t=[{onset_point['time']:.3f}, {offset_point['time']:.3f}]s")
                                 
-                                # If couldn't find exact matches, use first/last by time
-                                if extracted_onset_idx is None or extracted_offset_idx is None:
-                                    sorted_extracted = sorted(range(len(extracted_points)), 
-                                                            key=lambda i: extracted_points[i]['time'])
-                                    extracted_onset_idx = sorted_extracted[0]
-                                    extracted_offset_idx = sorted_extracted[-1]
+                                # Find onset/offset indices within extracted points
+                                extracted_onset_idx = extracted_points.index(onset_point)
+                                extracted_offset_idx = extracted_points.index(offset_point)
                                 
                                 # Create new finished contour
                                 self.contours.append({
@@ -1216,12 +1465,12 @@ class ChangepointAnnotator:
                                 self.current_contour = remaining_points
                                 
                                 print(f"✓ Created contour with {len(extracted_points)} points")
-                                print(f"  Onset: t={t_min:.3f}s, Offset: t={t_max:.3f}s")
-                                print(f"  Freq range: f=[{f_min:.0f}, {f_max:.0f}]Hz")
+                                print(f"  Onset: t={onset_point['time']:.3f}s, Offset: t={offset_point['time']:.3f}s")
                                 print(f"  → {len(remaining_points)} points remaining in current_contour")
                                 
                             else:
                                 # Working with finished contour - extract subset into NEW contour
+
                                 if isinstance(self.contours[contour_idx], list):
                                     points = self.contours[contour_idx]
                                 else:
@@ -1231,34 +1480,35 @@ class ChangepointAnnotator:
                                 onset_point = points[onset_idx]
                                 offset_point = points[offset_idx]
                                 
-                                # Determine bounding box
-                                t_min = min(onset_point['time'], offset_point['time'])
-                                t_max = max(onset_point['time'], offset_point['time'])
-                                f_min = min(onset_point['freq'], offset_point['freq'])
-                                f_max = max(onset_point['freq'], offset_point['freq'])
+                                # Determine time-sorted range
+                                points_sorted_by_time = sorted(enumerate(points), key=lambda x: x[1]['time'])
+                                onset_time_rank = next(i for i, (idx, _) in enumerate(points_sorted_by_time) if idx == onset_idx)
+                                offset_time_rank = next(i for i, (idx, _) in enumerate(points_sorted_by_time) if idx == offset_idx)
                                 
-                                print(f"  Extracting from contour {contour_idx+1}, bounding box: t=[{t_min:.3f}, {t_max:.3f}]s, f=[{f_min:.0f}, {f_max:.0f}]Hz")
+                                if onset_time_rank > offset_time_rank:
+                                    onset_time_rank, offset_time_rank = offset_time_rank, onset_time_rank
+                                    onset_idx, offset_idx = offset_idx, onset_idx
+                                    onset_point, offset_point = offset_point, onset_point
                                 
-                                # Extract all points within bounding box
-                                extracted_points = []
-                                remaining_points = []
+                                print(f"  Extracting from contour {contour_idx+1}, time rank: {onset_time_rank} to {offset_time_rank}")
                                 
-                                for point in points:
-                                    if (t_min <= point['time'] <= t_max and 
-                                        f_min <= point['freq'] <= f_max):
-                                        extracted_points.append(point)
-                                    else:
-                                        remaining_points.append(point)
+                                # Extract by time-sorted index range
+                                extracted_indices = {idx for rank, (idx, _) in enumerate(points_sorted_by_time) 
+                                                     if onset_time_rank <= rank <= offset_time_rank}
+                                extracted_points = [points[i] for i in range(len(points)) if i in extracted_indices]
+                                remaining_points = [points[i] for i in range(len(points)) if i not in extracted_indices]
                                 
                                 if len(extracted_points) < 2:
-                                    print(f"! Only {len(extracted_points)} point(s) in bounding box - need at least 2")
+                                    print(f"! Only {len(extracted_points)} point(s) between clicked points - need at least 2")
                                     self.pending_onset_idx = None
                                     self.drag_start = None
                                     return
                                 
                                 # Find onset/offset indices in extracted points
-                                extracted_onset_idx = None
-                                extracted_offset_idx = None
+                                extracted_onset_idx = extracted_points.index(onset_point)
+                                extracted_offset_idx = extracted_points.index(offset_point)
+                                # extracted_offset_idx = None
+
                                 for i, point in enumerate(extracted_points):
                                     if (abs(point['time'] - onset_point['time']) < 0.001 and 
                                         abs(point['freq'] - onset_point['freq']) < 1.0):
@@ -1398,7 +1648,17 @@ class ChangepointAnnotator:
             if self.pending_onset_idx is not None:
                 print("✗ Ctrl released - cancelled onset selection")
                 self.pending_onset_idx = None
-                self.update_display(recompute_spec=False)    
+                self.update_display(recompute_spec=False)
+        
+        if event.key == 'escape':
+            if self.lasso_mode:
+                print("✗ Escape pressed - cancelled lasso selection")
+                self.cancel_lasso()
+        
+        if event.key == 'enter' or event.key == 'return':
+            if self.lasso_mode and len(self.lasso_points) >= 3:
+                self.finish_lasso_selection() 
+
 
     def on_scroll(self, event):
         """Handle mouse wheel combo actions"""
@@ -1777,17 +2037,8 @@ class ChangepointAnnotator:
         """Update the annotations list display"""
         try:
             # Clear existing items
-            for widget in self.sequence_inner_frame.winfo_children():
+            for widget in self.annotations_inner_frame.winfo_children():
                 widget.destroy()
-            
-            # Add header
-            header_frame = tk.Frame(self.sequence_inner_frame, bg='lightgray')
-            header_frame.pack(fill=tk.X, pady=2)
-            tk.Label(header_frame, text="#", width=5, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
-            tk.Label(header_frame, text="t_onset", width=10, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
-            tk.Label(header_frame, text="t_offset", width=10, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
-            tk.Label(header_frame, text="f_min", width=10, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
-            tk.Label(header_frame, text="f_max", width=10, bg='lightgray', font=('', 9, 'bold')).pack(side=tk.LEFT)
             
             # Add rows for each contour
             for idx, contour in enumerate(self.contours):
@@ -1824,15 +2075,22 @@ class ChangepointAnnotator:
                     f_min = min(all_freqs)
                     f_max = max(all_freqs)
                 
-                # Create row
-                row_frame = tk.Frame(self.annotations_inner_frame, bg='white')
+                # Create row with consistent formatting
+                row_frame = ttk.Frame(self.annotations_inner_frame)
                 row_frame.pack(fill=tk.X, pady=1)
                 
-                tk.Label(row_frame, text=f"{idx+1}", width=5, bg='white').pack(side=tk.LEFT)
-                tk.Label(row_frame, text=f"{t_onset:.4f}", width=10, bg='white').pack(side=tk.LEFT)
-                tk.Label(row_frame, text=f"{t_offset:.4f}", width=10, bg='white').pack(side=tk.LEFT)
-                tk.Label(row_frame, text=f"{f_min:.1f}", width=10, bg='white').pack(side=tk.LEFT)
-                tk.Label(row_frame, text=f"{f_max:.1f}", width=10, bg='white').pack(side=tk.LEFT)
+                ttk.Label(row_frame, text=f"{idx+1}", font=('', 8), width=3).pack(side=tk.LEFT)
+                ttk.Label(row_frame, text=f"{t_onset:.4f}", font=('', 8), width=7).pack(side=tk.LEFT, padx=1)
+                ttk.Label(row_frame, text=f"{t_offset:.4f}", font=('', 8), width=7).pack(side=tk.LEFT, padx=1)
+                ttk.Label(row_frame, text=f"{f_min:.0f}", font=('', 8), width=7).pack(side=tk.LEFT, padx=1)
+                ttk.Label(row_frame, text=f"{f_max:.0f}", font=('', 8), width=7).pack(side=tk.LEFT, padx=1)
+            
+            # Show current contour info if exists
+            if self.current_contour:
+                unsaved_frame = ttk.Frame(self.annotations_inner_frame, style='Warning.TFrame')
+                unsaved_frame.pack(fill=tk.X, pady=3)
+                ttk.Label(unsaved_frame, text=f"→ Current: {len(self.current_contour)} pts (unsaved)", 
+                        font=('', 8, 'italic'), foreground='orange').pack(padx=5)
                 
         except Exception as e:
             print(f"ERROR in update_annotations_list: {e}")
@@ -1848,9 +2106,9 @@ class ChangepointAnnotator:
             return False
         
         # Thresholds in interpretable units
-        time_threshold_ms = 50  # milliseconds
+        time_threshold_ms = 10  # milliseconds
         time_threshold_s = time_threshold_ms / 1000.0
-        freq_threshold_hz = 200  # Hz
+        freq_threshold_hz = 10  # Hz
         
         # Find closest annotation within threshold
         min_dist = float('inf')
