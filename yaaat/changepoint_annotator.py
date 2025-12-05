@@ -1505,7 +1505,7 @@ class ChangepointAnnotator:
                                     
                                     if len(remaining) < 2:
                                         self.contours.pop(contour_idx)
-                                        print(f"  → Removed contour {contour_idx+1} (< 2 points remaining)")git add .
+                                        print(f"  → Removed contour {contour_idx+1} (< 2 points remaining)")
                                     else:
                                         sorted_indices = sorted(range(len(remaining)), key=lambda i: remaining[i]['time'])
                                         self.contours[contour_idx] = {
