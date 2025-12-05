@@ -874,15 +874,13 @@ class ChangepointAnnotator:
                 is_ctrl = bool(ctypes.windll.user32.GetKeyState(0x11) & 0x8000)
             else:
                 is_ctrl = hasattr(event, 'key') and event.key in ['control', 'ctrl']
-
-
+            
             # If in lasso mode (already started), continue adding to lasso path
             if self.lasso_mode:
                 # This will be handled in on_motion as a drag
                 self.drag_start = (event.xdata, event.ydata)
                 return
-
-
+            
             # Ctrl pressed - CHECK WHAT TYPE OF CTRL+CLICK THIS IS
             if is_ctrl and (self.current_contour or self.contours):
                 # Check if clicking near an existing point (for onset/offset marking)
@@ -934,9 +932,8 @@ class ChangepointAnnotator:
                     print(f"✓ Lasso mode started - drag to draw selection region")
                     return
             
-
-            # Check if clicking near harmonic box edge (when NOT in lasso mode and NOT ctrl)
-            if not is_ctrl and self.show_bounding_box.get() and self.annotations:
+            # Check if clicking near harmonic box edge (when NOT in lasso mode)
+            if self.show_bounding_box.get() and self.annotations:
                 times = [ann['time'] for ann in self.annotations]
                 freqs = [ann['freq'] for ann in self.annotations]
                 t_min, t_max = min(times), max(times)
@@ -972,11 +969,12 @@ class ChangepointAnnotator:
                     harmonic_idx = closest_edge[0]
                     edge_type = closest_edge[1]
                     print(f"Grabbed {self.harmonics[harmonic_idx]['name']} harmonic {edge_type} edge (distance: {closest_dist:.1f} Hz)")
-                    return
+                    return  # ← ADD THIS RETURN
             
+            # Only set drag_start for zoom/annotate if NOT Ctrl
+            if not is_ctrl:
+                self.drag_start = (event.xdata, event.ydata)
             
-            # If not dragging harmonic, normal behavior (zoom or annotate)
-            self.drag_start = (event.xdata, event.ydata)
 
 
 
@@ -1030,99 +1028,157 @@ class ChangepointAnnotator:
 
     def finish_lasso_selection(self):
         """Extract points within lasso polygon and create contour"""
-        if len(self.lasso_points) < 3:
-            print("! Need at least 2 vertices to define a selection region")
-            self.cancel_lasso()
-            return
-        
-        print(f"✓ Finishing lasso selection with {len(self.lasso_points)} vertices")
-        
-        # Find all points (from current_contour and finished contours) inside polygon
-        extracted_points = []
-        source_info = []  # Track where each point came from
-        
-        # Check current_contour
-        for i, point in enumerate(self.current_contour):
-            if self.point_in_polygon(point['time'], point['freq'], self.lasso_points):
-                extracted_points.append(point)
-                source_info.append(('current', i))
-        
-        # Check finished contours
-        for contour_idx, contour in enumerate(self.contours):
-            points = contour['points'] if isinstance(contour, dict) else contour
-            for point_idx, point in enumerate(points):
+        try: 
+            if len(self.lasso_points) < 3:
+                print("! Need at least 2 vertices to define a selection region")
+                self.cancel_lasso()
+                return
+            
+            print(f"✓ Finishing lasso selection with {len(self.lasso_points)} vertices")
+
+            # DEBUG: Print state before extraction
+            print(f"DEBUG: Before extraction:")
+            print(f"  - current_contour: {len(self.current_contour)} points")
+            print(f"  - finished contours: {len(self.contours)} contours")
+            for i, c in enumerate(self.contours):
+                pts = c['points'] if isinstance(c, dict) else c
+                print(f"    Contour {i}: {len(pts)} points")
+
+            # Find all points (from current_contour and finished contours) inside polygon
+            extracted_points = []
+            source_info = []  # Track where each point came from
+            
+            # Check current_contour
+            for i, point in enumerate(self.current_contour):
                 if self.point_in_polygon(point['time'], point['freq'], self.lasso_points):
                     extracted_points.append(point)
-                    source_info.append(('contour', contour_idx, point_idx))
-        
-        if len(extracted_points) < 2:
-            print(f"! Only {len(extracted_points)} point(s) found in lasso region - need at least 2")
-            self.cancel_lasso()
-            return
-        
-        # Sort extracted points by time
-        sorted_with_source = sorted(zip(extracted_points, source_info), key=lambda x: x[0]['time'])
-        extracted_points = [p for p, _ in sorted_with_source]
-        
-        # Determine onset/offset (first and last in time)
-        onset_idx = 0
-        offset_idx = len(extracted_points) - 1
-        
-        # Create new contour WITH PROPER STRUCTURE
-        new_contour = {
-            'points': extracted_points,
-            'onset_idx': onset_idx,
-            'offset_idx': offset_idx
-        }
-        self.contours.append(new_contour)
-        
-        # Remove extracted points from their sources
-        # Build sets of indices to remove (process in reverse to avoid index shifting)
-        current_indices_to_remove = set()
-        contour_points_to_remove = {}  # contour_idx -> set of point indices
-        
-        for _, source in sorted_with_source:
-            if source[0] == 'current':
-                current_indices_to_remove.add(source[1])
-            else:  # 'contour'
-                contour_idx = source[1]
-                point_idx = source[2]
-                if contour_idx not in contour_points_to_remove:
-                    contour_points_to_remove[contour_idx] = set()
-                contour_points_to_remove[contour_idx].add(point_idx)
-        
-        # Remove from current_contour
-        self.current_contour = [p for i, p in enumerate(self.current_contour) 
-                                if i not in current_indices_to_remove]
-        
-        # Remove from finished contours (reverse order to avoid index issues)
-        for contour_idx in sorted(contour_points_to_remove.keys(), reverse=True):
-            if isinstance(self.contours[contour_idx], dict):
-                points = self.contours[contour_idx]['points']
-                remaining = [p for i, p in enumerate(points) 
-                            if i not in contour_points_to_remove[contour_idx]]
-                
-                if len(remaining) < 2:
-                    self.contours.pop(contour_idx)
-                    print(f"  → Removed contour {contour_idx+1} (< 2 points remaining)")
+                    source_info.append(('current', i))
+            
+            # Check finished contours
+            for contour_idx, contour in enumerate(self.contours):
+                points = contour['points'] if isinstance(contour, dict) else contour
+                for point_idx, point in enumerate(points):
+                    if self.point_in_polygon(point['time'], point['freq'], self.lasso_points):
+                        extracted_points.append(point)
+                        source_info.append(('contour', contour_idx, point_idx))
+            
+            if len(extracted_points) < 2:
+                print(f"! Only {len(extracted_points)} point(s) found in lasso region - need at least 2")
+                self.cancel_lasso()
+                return
+            
+            # Sort extracted points by time
+            sorted_with_source = sorted(zip(extracted_points, source_info), key=lambda x: x[0]['time'])
+            extracted_points = [p for p, _ in sorted_with_source]
+            
+
+            # Determine onset/offset (first and last in time)
+            onset_idx = 0
+            offset_idx = len(extracted_points) - 1
+
+            # Remove extracted points from their sources FIRST (before appending new contour)
+            # Build sets of indices to remove (process in reverse to avoid index shifting)
+            current_indices_to_remove = set()
+            contour_points_to_remove = {}  # contour_idx -> set of point indices
+
+            # DEBUG: Print what was extracted
+            print(f"DEBUG: Extracted {len(extracted_points)} points from lasso region")
+
+            for _, source in sorted_with_source:
+                if source[0] == 'current':
+                    current_indices_to_remove.add(source[1])
+                else:  # 'contour'
+                    contour_idx = source[1]
+                    point_idx = source[2]
+
+                    print(f"  DEBUG: Marking point from contour_idx={contour_idx}, point_idx={point_idx}")  # ADD THIS
+
+                    if contour_idx not in contour_points_to_remove:
+                        contour_points_to_remove[contour_idx] = set()
+                    contour_points_to_remove[contour_idx].add(point_idx)
+
+            # Remove from current_contour
+            self.current_contour = [p for i, p in enumerate(self.current_contour) 
+                                    if i not in current_indices_to_remove]
+
+            # Remove from finished contours (reverse order to avoid index issues)
+            for contour_idx in sorted(contour_points_to_remove.keys(), reverse=True):
+                print(f"  DEBUG: Processing contour_idx={contour_idx}, removing {len(contour_points_to_remove[contour_idx])} points")
+                if isinstance(self.contours[contour_idx], dict):
+                    points = self.contours[contour_idx]['points']
+                    print(f"    DEBUG: Before removal - contour has {len(points)} points")
+                    remaining = [p for i, p in enumerate(points) 
+                                if i not in contour_points_to_remove[contour_idx]]
+                    print(f"    DEBUG: After filtering - {len(remaining)} points remain")
+                    
+                    if len(remaining) < 2:
+                        self.contours.pop(contour_idx)
+                        print(f"  → Removed contour {contour_idx+1} (< 2 points remaining)")
+                    else:
+                        # Recalculate onset/offset indices
+                        sorted_indices = sorted(range(len(remaining)), key=lambda i: remaining[i]['time'])
+                        self.contours[contour_idx] = {
+                            'points': remaining,
+                            'onset_idx': sorted_indices[0],
+                            'offset_idx': sorted_indices[-1]
+                        }
+                        print(f"  → Updated contour {contour_idx}: {len(remaining)} points remain")
+                        print(f"    DEBUG: Verified self.contours[{contour_idx}] now has {len(self.contours[contour_idx]['points'])} points")
                 else:
-                    # Recalculate onset/offset indices
-                    sorted_indices = sorted(range(len(remaining)), key=lambda i: remaining[i]['time'])
-                    self.contours[contour_idx] = {
-                        'points': remaining,
-                        'onset_idx': sorted_indices[0],
-                        'offset_idx': sorted_indices[-1]
-                    }
-                    print(f"  → Updated contour {contour_idx+1}: {len(remaining)} points remain")
+                    # OLD LIST FORMAT - handle it
+                    print(f"    DEBUG: Old list format detected for contour {contour_idx}")
+                    points = self.contours[contour_idx]
+                    print(f"    DEBUG: Before removal - contour has {len(points)} points")
+                    remaining = [p for i, p in enumerate(points) 
+                                if i not in contour_points_to_remove[contour_idx]]
+                    print(f"    DEBUG: After filtering - {len(remaining)} points remain")
+                    
+                    if len(remaining) < 2:
+                        self.contours.pop(contour_idx)
+                        print(f"  → Removed contour {contour_idx} (< 2 points)")
+                    else:
+                        # Convert to new dict format while we're at it
+                        sorted_indices = sorted(range(len(remaining)), key=lambda i: remaining[i]['time'])
+                        self.contours[contour_idx] = {
+                            'points': remaining,
+                            'onset_idx': sorted_indices[0],
+                            'offset_idx': sorted_indices[-1]
+                        }
+                        print(f"  → Updated contour {contour_idx}: {len(remaining)} points remain (converted to dict format)")
+
+
+            # DEBUG: Print state after removal
+            print(f"DEBUG: After removal:")
+            print(f"  - current_contour: {len(self.current_contour)} points remaining")
+            print(f"  - finished contours: {len(self.contours)} contours")
+            for i, c in enumerate(self.contours):
+                pts = c['points'] if isinstance(c, dict) else c
+                print(f"    Contour {i}: {len(pts)} points")
+
+            # NOW append the new contour AFTER removals are done
+            new_contour = {
+                'points': extracted_points,
+                'onset_idx': onset_idx,
+                'offset_idx': offset_idx
+            }
+            self.contours.append(new_contour)
+
+            print(f"✓ Created contour with {len(extracted_points)} points from lasso selection")
+            print(f"  Onset: t={extracted_points[onset_idx]['time']:.3f}s, f={extracted_points[onset_idx]['freq']:.0f}Hz")
+            print(f"  Offset: t={extracted_points[offset_idx]['time']:.3f}s, f={extracted_points[offset_idx]['freq']:.0f}Hz")
+
+            self.cancel_lasso()
+            self.changes_made = True
+            self.rebuild_annotations()  # This will assign onset/offset labels properly
+            # self.update_annotations_list()
+            self.update_display(recompute_spec=False)
         
-        print(f"✓ Created contour with {len(extracted_points)} points from lasso selection")
-        print(f"  Onset: t={extracted_points[onset_idx]['time']:.3f}s, f={extracted_points[onset_idx]['freq']:.0f}Hz")
-        print(f"  Offset: t={extracted_points[offset_idx]['time']:.3f}s, f={extracted_points[offset_idx]['freq']:.0f}Hz")
-        
-        self.cancel_lasso()
-        self.changes_made = True
-        self.rebuild_annotations()  # This will assign onset/offset labels properly
-        self.update_display(recompute_spec=False)
+        except Exception as e:
+            print(f"ERROR in finish_lasso_selection: {e}")
+            import traceback
+            traceback.print_exc()
+            self.cancel_lasso()  # Ensure lasso gets cancelled even on error
+
 
 
     def cancel_lasso(self):
@@ -1331,6 +1387,13 @@ class ChangepointAnnotator:
                             time_threshold_s = 0.05
                             freq_threshold_hz = 200
                             
+
+                            # DEBUG: Print state before extraction
+                            print(f"DEBUG: Before Ctrl+Click extraction:")
+                            print(f"  - current_contour: {len(self.current_contour)} points")
+                            print(f"  - finished contours: {len(self.contours)} contours")
+
+
                             clicked_info = None
                             min_dist = float('inf')
                             
@@ -1381,199 +1444,113 @@ class ChangepointAnnotator:
                                 print(f"✓ Marked second endpoint in FINISHED CONTOUR {second_info['contour_idx']+1}, point {second_info['point_idx']}")
                             print(f"  at t={second_info['point']['time']:.3f}s, f={second_info['point']['freq']:.0f}Hz")
 
-                            # Must be in same contour
-                            if first_info['contour_idx'] != second_info['contour_idx']:
-                                print(f"! Both points must be in same contour")
-                                print(f"  First: {'CURRENT' if first_info['contour_idx']==-1 else f'contour {first_info['contour_idx']+1}'}")
-                                print(f"  Second: {'CURRENT' if second_info['contour_idx']==-1 else f'contour {second_info['contour_idx']+1}'}")
+                            # Extract ALL points between the two clicked points (across all contours)
+                            onset_time = min(first_info['point']['time'], second_info['point']['time'])
+                            offset_time = max(first_info['point']['time'], second_info['point']['time'])
+
+                            print(f"  Extracting all points between t={onset_time:.3f}s and t={offset_time:.3f}s")
+
+                            # Collect all points within time range
+                            extracted_points = []
+                            source_info = []
+
+                            # Check current_contour
+                            for i, point in enumerate(self.current_contour):
+                                if onset_time <= point['time'] <= offset_time:
+                                    extracted_points.append(point)
+                                    source_info.append(('current', i))
+
+                            # Check finished contours
+                            for contour_idx, contour in enumerate(self.contours):
+                                points = contour['points'] if isinstance(contour, dict) else contour
+                                for point_idx, point in enumerate(points):
+                                    if onset_time <= point['time'] <= offset_time:
+                                        extracted_points.append(point)
+                                        source_info.append(('contour', contour_idx, point_idx))
+
+                            if len(extracted_points) < 2:
+                                print(f"! Only {len(extracted_points)} point(s) found between endpoints - need at least 2")
                                 self.pending_onset_idx = None
                                 self.drag_start = None
                                 return
-                            
-                            if first_info['point_idx'] == second_info['point_idx']:
-                                print(f"! Can't use same point as both endpoints")
-                                self.pending_onset_idx = None
-                                self.drag_start = None
-                                return
-                            
-                            contour_idx = first_info['contour_idx']
-                            idx1 = first_info['point_idx']
-                            idx2 = second_info['point_idx']
-                            
-                            # Determine onset/offset by time
-                            if contour_idx == -1:
-                                points = self.current_contour
-                            else:
-                                points = self.contours[contour_idx] if isinstance(self.contours[contour_idx], list) else self.contours[contour_idx]['points']
-                            
-                            if points[idx1]['time'] < points[idx2]['time']:
-                                onset_idx, offset_idx = idx1, idx2
-                            else:
-                                onset_idx, offset_idx = idx2, idx1
-                            
-                            print(f"✓ Marked onset at point {onset_idx}: t={points[onset_idx]['time']:.3f}s")
-                            print(f"✓ Marked offset at point {offset_idx}: t={points[offset_idx]['time']:.3f}s")
 
-                            # Update contour with explicit onset/offset markers
-                            # Extract points within temporal range and create new contour
-                            if contour_idx == -1:
-                                # Working with current_contour - extract and remove points
-                                points = self.current_contour
-                                
-                                # Get actual point objects at the clicked indices
-                                onset_point = points[onset_idx]
-                                offset_point = points[offset_idx]
-                                
-                                # Determine which index is earlier in time
-                                points_sorted_by_time = sorted(enumerate(points), key=lambda x: x[1]['time'])
-                                onset_time_rank = next(i for i, (idx, _) in enumerate(points_sorted_by_time) if idx == onset_idx)
-                                offset_time_rank = next(i for i, (idx, _) in enumerate(points_sorted_by_time) if idx == offset_idx)
-                                
-                                if onset_time_rank > offset_time_rank:
-                                    onset_time_rank, offset_time_rank = offset_time_rank, onset_time_rank
-                                    onset_idx, offset_idx = offset_idx, onset_idx
-                                    onset_point, offset_point = offset_point, onset_point
-                                
-                                print(f"  Extracting points by time rank: {onset_time_rank} to {offset_time_rank}")
-                                
-                                # Extract points within this time-sorted range
-                                extracted_indices = {idx for rank, (idx, _) in enumerate(points_sorted_by_time) 
-                                                     if onset_time_rank <= rank <= offset_time_rank}
-                                extracted_points = [points[i] for i in range(len(points)) if i in extracted_indices]
-                                remaining_points = [points[i] for i in range(len(points)) if i not in extracted_indices]
-                                
-                                if len(extracted_points) < 2:
-                                    print(f"! Only {len(extracted_points)} point(s) between clicked points - need at least 2")
-                                    self.pending_onset_idx = None
-                                    self.drag_start = None
-                                    return
-                                
-                                print(f"  Temporal range: t=[{onset_point['time']:.3f}, {offset_point['time']:.3f}]s")
-                                
-                                # Find onset/offset indices within extracted points
-                                extracted_onset_idx = extracted_points.index(onset_point)
-                                extracted_offset_idx = extracted_points.index(offset_point)
-                                
-                                # Create new finished contour
-                                self.contours.append({
-                                    'points': extracted_points,
-                                    'onset_idx': extracted_onset_idx,
-                                    'offset_idx': extracted_offset_idx
-                                })
-                                
-                                # Update current_contour - remove extracted points
-                                self.current_contour = remaining_points
-                                
-                                print(f"✓ Created contour with {len(extracted_points)} points")
-                                print(f"  Onset: t={onset_point['time']:.3f}s, Offset: t={offset_point['time']:.3f}s")
-                                print(f"  → {len(remaining_points)} points remaining in current_contour")
-                                
-                            else:
-                                # Working with finished contour - extract subset into NEW contour
+                            # Sort by time
+                            sorted_with_source = sorted(zip(extracted_points, source_info), key=lambda x: x[0]['time'])
+                            extracted_points = [p for p, _ in sorted_with_source]
 
-                                if isinstance(self.contours[contour_idx], list):
-                                    points = self.contours[contour_idx]
+                            # Use the same removal logic as lasso
+                            current_indices_to_remove = set()
+                            contour_points_to_remove = {}
+
+                            for _, source in sorted_with_source:
+                                if source[0] == 'current':
+                                    current_indices_to_remove.add(source[1])
                                 else:
+                                    contour_idx = source[1]
+                                    point_idx = source[2]
+                                    if contour_idx not in contour_points_to_remove:
+                                        contour_points_to_remove[contour_idx] = set()
+                                    contour_points_to_remove[contour_idx].add(point_idx)
+
+                            # Remove from current_contour
+                            self.current_contour = [p for i, p in enumerate(self.current_contour) 
+                                                    if i not in current_indices_to_remove]
+
+                            # Remove from finished contours (same logic as lasso)
+                            for contour_idx in sorted(contour_points_to_remove.keys(), reverse=True):
+                                if isinstance(self.contours[contour_idx], dict):
                                     points = self.contours[contour_idx]['points']
-                                
-                                # Get the clicked points
-                                onset_point = points[onset_idx]
-                                offset_point = points[offset_idx]
-                                
-                                # Determine time-sorted range
-                                points_sorted_by_time = sorted(enumerate(points), key=lambda x: x[1]['time'])
-                                onset_time_rank = next(i for i, (idx, _) in enumerate(points_sorted_by_time) if idx == onset_idx)
-                                offset_time_rank = next(i for i, (idx, _) in enumerate(points_sorted_by_time) if idx == offset_idx)
-                                
-                                if onset_time_rank > offset_time_rank:
-                                    onset_time_rank, offset_time_rank = offset_time_rank, onset_time_rank
-                                    onset_idx, offset_idx = offset_idx, onset_idx
-                                    onset_point, offset_point = offset_point, onset_point
-                                
-                                print(f"  Extracting from contour {contour_idx+1}, time rank: {onset_time_rank} to {offset_time_rank}")
-                                
-                                # Extract by time-sorted index range
-                                extracted_indices = {idx for rank, (idx, _) in enumerate(points_sorted_by_time) 
-                                                     if onset_time_rank <= rank <= offset_time_rank}
-                                extracted_points = [points[i] for i in range(len(points)) if i in extracted_indices]
-                                remaining_points = [points[i] for i in range(len(points)) if i not in extracted_indices]
-                                
-                                if len(extracted_points) < 2:
-                                    print(f"! Only {len(extracted_points)} point(s) between clicked points - need at least 2")
-                                    self.pending_onset_idx = None
-                                    self.drag_start = None
-                                    return
-                                
-                                # Find onset/offset indices in extracted points
-                                extracted_onset_idx = extracted_points.index(onset_point)
-                                extracted_offset_idx = extracted_points.index(offset_point)
-                                # extracted_offset_idx = None
-
-                                for i, point in enumerate(extracted_points):
-                                    if (abs(point['time'] - onset_point['time']) < 0.001 and 
-                                        abs(point['freq'] - onset_point['freq']) < 1.0):
-                                        extracted_onset_idx = i
-                                    if (abs(point['time'] - offset_point['time']) < 0.001 and 
-                                        abs(point['freq'] - offset_point['freq']) < 1.0):
-                                        extracted_offset_idx = i
-                                
-                                if extracted_onset_idx is None or extracted_offset_idx is None:
-                                    sorted_extracted = sorted(range(len(extracted_points)), 
-                                                            key=lambda i: extracted_points[i]['time'])
-                                    extracted_onset_idx = sorted_extracted[0]
-                                    extracted_offset_idx = sorted_extracted[-1]
-                                
-                                # Create NEW contour from extracted points
-                                self.contours.append({
-                                    'points': extracted_points,
-                                    'onset_idx': extracted_onset_idx,
-                                    'offset_idx': extracted_offset_idx
-                                })
-                                
-                                # Update source contour - keep remaining points if >= 2, otherwise remove
-                                if len(remaining_points) >= 2:
-                                    if isinstance(self.contours[contour_idx], list):
-                                        self.contours[contour_idx] = remaining_points
+                                    remaining = [p for i, p in enumerate(points) 
+                                                if i not in contour_points_to_remove[contour_idx]]
+                                    
+                                    if len(remaining) < 2:
+                                        self.contours.pop(contour_idx)
+                                        print(f"  → Removed contour {contour_idx+1} (< 2 points remaining)")git add .
                                     else:
-                                        # Update the dict, recalculate onset/offset indices
-                                        sorted_remaining = sorted(range(len(remaining_points)), 
-                                                                key=lambda i: remaining_points[i]['time'])
+                                        sorted_indices = sorted(range(len(remaining)), key=lambda i: remaining[i]['time'])
                                         self.contours[contour_idx] = {
-                                            'points': remaining_points,
-                                            'onset_idx': sorted_remaining[0],
-                                            'offset_idx': sorted_remaining[-1]
+                                            'points': remaining,
+                                            'onset_idx': sorted_indices[0],
+                                            'offset_idx': sorted_indices[-1]
                                         }
-                                    print(f"✓ Created NEW contour with {len(extracted_points)} points from contour {contour_idx+1}")
-                                    print(f"  → Updated contour {contour_idx+1}: {len(remaining_points)} points remain")
+                                        print(f"  → Updated contour {contour_idx+1}: {len(remaining)} points remain")
                                 else:
-                                    self.contours.pop(contour_idx)
-                                    print(f"✓ Created NEW contour with {len(extracted_points)} points from contour {contour_idx+1}")
-                                    print(f"  → Removed contour {contour_idx+1}: < 2 points remaining")
+                                    # Old list format
+                                    points = self.contours[contour_idx]
+                                    remaining = [p for i, p in enumerate(points) 
+                                                if i not in contour_points_to_remove[contour_idx]]
+                                    
+                                    if len(remaining) < 2:
+                                        self.contours.pop(contour_idx)
+                                        print(f"  → Removed contour {contour_idx+1} (< 2 points)")
+                                    else:
+                                        sorted_indices = sorted(range(len(remaining)), key=lambda i: remaining[i]['time'])
+                                        self.contours[contour_idx] = {
+                                            'points': remaining,
+                                            'onset_idx': sorted_indices[0],
+                                            'offset_idx': sorted_indices[-1]
+                                        }
+                                        print(f"  → Updated contour {contour_idx+1}: {len(remaining)} points remain")
+
+                            # Create new contour
+                            new_contour = {
+                                'points': extracted_points,
+                                'onset_idx': 0,
+                                'offset_idx': len(extracted_points) - 1
+                            }
+                            self.contours.append(new_contour)
+
+                            print(f"✓ Created contour with {len(extracted_points)} points from Ctrl+Click selection")
+                            print(f"  Onset: t={extracted_points[0]['time']:.3f}s, f={extracted_points[0]['freq']:.0f}Hz")
+                            print(f"  Offset: t={extracted_points[-1]['time']:.3f}s, f={extracted_points[-1]['freq']:.0f}Hz")
 
                             self.pending_onset_idx = None
                             self.changes_made = True
                             self.rebuild_annotations()
+                            self.update_annotations_list()
                             self.update_display(recompute_spec=False)
                             self.drag_start = None
                             return
-
-
-                            # # Create new contour from extracted points
-                            # self.contours.append(extracted_points)
-                            
-                            # if source_was_current:
-                            #     self.current_contour = remaining_points
-                            #     print(f"✓ Created contour with {len(extracted_points)} points")
-                            #     print(f"  → {len(remaining_points)} points remaining in current contour")
-                            # else:
-                            #     print(f"✓ Created contour with {len(extracted_points)} points from finished contour")
-                            
-                            # self.pending_onset_idx = None
-                            # self.changes_made = True
-                            # self.rebuild_annotations()
-                            # self.update_display(recompute_spec=False)
-                            # self.drag_start = None
-                            # return
 
 
                     
@@ -2036,12 +2013,46 @@ class ChangepointAnnotator:
     def update_annotations_list(self):
         """Update the annotations list display"""
         try:
+            print(f"\nDEBUG update_annotations_list: Called")
+            print(f"  Total contours: {len(self.contours)}")
+            
+            # Print each contour's details
+            for i, contour in enumerate(self.contours):
+                if isinstance(contour, dict):
+                    points = contour['points']
+                    onset_idx = contour.get('onset_idx', 0)
+                    offset_idx = contour.get('offset_idx', len(points) - 1)
+                    onset_time = points[onset_idx]['time']
+                    offset_time = points[offset_idx]['time']
+                else:
+                    sorted_points = sorted(contour, key=lambda x: x['time'])
+                    onset_time = sorted_points[0]['time']
+                    offset_time = sorted_points[-1]['time']
+                    points = contour
+                
+                print(f"    Contour {i}: {len(points)} points, onset={onset_time:.3f}s, offset={offset_time:.3f}s")
+            
             # Clear existing items
             for widget in self.annotations_inner_frame.winfo_children():
                 widget.destroy()
             
+            # Sort contours by onset time before displaying
+            sorted_contours = []
+            for contour in self.contours:
+                if isinstance(contour, dict):
+                    points = contour['points']
+                    onset_idx = contour.get('onset_idx', 0)
+                    onset_time = points[onset_idx]['time']
+                else:
+                    sorted_points = sorted(contour, key=lambda x: x['time'])
+                    onset_time = sorted_points[0]['time']
+                sorted_contours.append((onset_time, contour))
+            
+            sorted_contours.sort(key=lambda x: x[0])  # Sort by onset time
+            
             # Add rows for each contour
-            for idx, contour in enumerate(self.contours):
+            for idx, (onset_time, contour) in enumerate(sorted_contours):
+
                 # Handle both old (list) and new (dict) formats
                 if isinstance(contour, dict):
                     points = contour['points']
@@ -2280,7 +2291,12 @@ class ChangepointAnnotator:
             if save_dir:
                 self.label_dir = Path(save_dir)
             else:
-                return  # User cancelled
+                # User cancelled - use default directory instead of returning
+                dataset_name = Path(directory).name
+                default_dir = Path.home() / "yaaat_annotations" / dataset_name
+                default_dir.mkdir(parents=True, exist_ok=True)
+                self.label_dir = default_dir
+
         elif response is False:  # No - create new
             save_dir = filedialog.askdirectory(title="Select Parent Directory for New Folder")
             if save_dir:
