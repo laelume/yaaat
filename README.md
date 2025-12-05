@@ -79,6 +79,22 @@ root.mainloop()
 
 - TODO: implement ranking system for annotation quality; inject as learning feedback mechanism
 
+
+## v0.1.9 - Contour Extraction Tools
+
+### New Features
+- **Lasso Selection**: Ctrl+Click+Drag to select regions
+- **Endpoint Marking**: Ctrl+Click two points to extract time range
+- **Cross-contour extraction**: Select points from multiple contours at once
+- **Auto-sorted table**: Contours sorted by onset time
+
+### Improvements
+- Zoom only activates on normal Click+Drag (Ctrl excluded)
+- Table updates immediately after modifications
+- Better error handling and user feedback
+
+
+
 ## Requirements
 
 - Python ≥3.8 (built using 3.11)
