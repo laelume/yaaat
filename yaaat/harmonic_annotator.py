@@ -127,17 +127,33 @@ class FlexibleSpectralValleyTracker:
         peak_freqs = freqs_subset[peaks]
         peak_mags = psd_subset[peaks]
         
+        
+        print(f"\nDEBUG - PSD Peak Detection:")
+        print(f"  Found {len(peaks)} peaks in PSD")
+        print(f"  Top 10 peaks by magnitude:")
+        sorted_indices = np.argsort(peak_mags)[::-1]
+        for i in sorted_indices[:10]:
+            print(f"    {peak_freqs[i]:.1f} Hz: {peak_mags[i]:.1f} dB")
+
+
         # Sort by magnitude
         sorted_indices = np.argsort(peak_mags)[::-1]
         peak_freqs_sorted = peak_freqs[sorted_indices]
         
-        # Find fundamental
+        
+        # Find fundamental - prioritize lowest frequency with strong harmonic series
         best_fundamental = None
         best_harmonic_series = []
         best_score = 0
         
-        for f0_candidate in peak_freqs_sorted[:min(10, len(peak_freqs_sorted))]:
+        # Sort candidates by frequency (low to high), not magnitude
+        peak_freqs_by_freq = sorted(zip(peak_freqs, peak_mags), key=lambda x: x[0])
+        
+        print(f"\nDEBUG - Testing F0 candidates (low to high freq):")
+        
+        for f0_candidate, mag in peak_freqs_by_freq[:min(10, len(peak_freqs_by_freq))]:
             if f0_candidate < fmin:
+                print(f"\n  Testing F0={f0_candidate:.1f} Hz")
                 continue
             
             harmonic_series = [f0_candidate]
@@ -154,20 +170,29 @@ class FlexibleSpectralValleyTracker:
                 if freq_diffs[closest_idx] < tolerance:
                     harmonic_series.append(peak_freqs[closest_idx])
             
+            print(f"    Found {len(harmonic_series)} harmonics: {[f'{f:.1f}' for f in harmonic_series[:5]]}")
+
+            # Require at least 2 harmonics (F0 + one harmonic)
             score = len(harmonic_series)
             if score > best_score:
                 best_score = score
                 best_fundamental = f0_candidate
                 best_harmonic_series = harmonic_series
         
+        print(f"\nDEBUG - Selected F0={best_fundamental:.1f} Hz with {len(best_harmonic_series)} harmonics")
+        print(f"  Harmonic series: {[f'{f:.1f}' for f in best_harmonic_series]}")
+        
         return best_fundamental, best_harmonic_series
-    
+
     def track_harmonics_with_template(self, harmonic_series, 
                                     fmin=None, fmax=None,
                                     freq_tolerance=0.08,
                                     prominence_factor=0.05, 
                                     curve_smoothing_window=7):
         """Track harmonics across time using PSD-derived template"""
+
+        print(f"DEBUG: track_harmonics_with_template received: {harmonic_series}")
+
         if fmin is None:
             fmin = min(harmonic_series) * 0.8
         if fmax is None:
@@ -250,9 +275,8 @@ class FlexibleSpectralValleyTracker:
         
         return harmonic_tracks
     
-    def find_valleys_between_harmonics(self, harmonic_tracks, 
-                                     valley_margin=0.25,
-                                     min_gap=50):
+
+    def find_valleys_between_harmonics(self, harmonic_tracks, valley_margin=0.25,min_gap=50):
         """Find valleys between consecutive harmonics"""
         valley_tracks = {}
         
@@ -310,6 +334,62 @@ class FlexibleSpectralValleyTracker:
         return valley_tracks
 
 
+    def apply_learned_corrections(self, corrector_model):
+        """Apply learned model to refine harmonic tracks
+        
+        Args:
+            corrector_model: HarmonicCorrector instance
+        """
+        if not corrector_model.is_trained:
+            print("Model not trained, skipping corrections")
+            return
+        
+        corrections_applied = 0
+        
+        for t_idx, frame_data in enumerate(self.harmonic_tracks):
+            for harmonic in frame_data['harmonics']:
+                old_freq = harmonic['actual_frequency']
+                
+                # Extract context for this detection
+                context_width = 5
+                t_start = max(0, t_idx - context_width)
+                t_end = min(self.magnitude.shape[1], t_idx + context_width + 1)
+                
+                freq_idx = harmonic['freq_idx']
+                freq_context = 20  # bins
+                f_start = max(0, freq_idx - freq_context)
+                f_end = min(len(self.freqs), freq_idx + freq_context + 1)
+                
+                spec_slice = self.log_magnitude[f_start:f_end, t_start:t_end]
+                freqs_slice = self.freqs[f_start:f_end]
+                
+                # Predict correction
+                new_freq = corrector_model.predict_correction(spec_slice, freqs_slice, old_freq)
+                
+                # Only apply if shift is significant (>5 Hz)
+                if abs(new_freq - old_freq) > 5:
+                    harmonic['actual_frequency'] = new_freq
+                    harmonic['model_corrected'] = True
+                    corrections_applied += 1
+        
+        print(f"✓ Applied {corrections_applied} learned corrections")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ============================================================================
 # HARMONIC ANNOTATOR GUI
 # ============================================================================
@@ -346,8 +426,11 @@ class HarmonicAnnotator:
         self.fmin = tk.IntVar(value=500)
         self.fmax = tk.IntVar(value=16000)
         self.max_harmonics = tk.IntVar(value=10)
-        self.prominence_threshold = tk.DoubleVar(value=3.0)
-        self.curve_smoothing_window = tk.IntVar(value=7)
+        self.prominence_threshold = tk.DoubleVar(value=0.8)
+        self.prominence_threshold.trace_add('write', lambda *args: print(f"Prominence changed to: {self.prominence_threshold.get()}"))
+        self.prominence_threshold.trace_add('write', lambda *args: self.on_prominence_change())
+
+        self.curve_smoothing_window = tk.IntVar(value=50)
 
         # Display parameters
         self.fmin_plot = tk.IntVar(value=100)
@@ -370,9 +453,20 @@ class HarmonicAnnotator:
         # Visualization options
         self.show_valleys = tk.BooleanVar(value=True)
         self.show_harmonics = tk.BooleanVar(value=True)
-        
+    
+        # Interface
         self.setup_ui()
         self.root.after(100, self.auto_load_directory)
+
+        # Learning
+        self.corrector_model = None
+
+        # Manual additions
+        self.manual_harmonics = []  # List of {'freq': float, 'harmonic_num': int, 'color': str}
+        self.manual_valleys = []    # List of {'freq': float, 'color': str}
+
+
+
     
     def setup_ui(self):
         """Create the user interface"""
@@ -522,13 +616,13 @@ class HarmonicAnnotator:
         prom_frame = ttk.Frame(scrollable_frame)
         prom_frame.pack(fill=tk.X, pady=2)
         ttk.Label(prom_frame, text="Prominence:", font=('', 8)).pack(side=tk.LEFT)
-        ttk.Scale(prom_frame, from_=0.01, to=1.0, variable=self.prominence_threshold,
-                 orient=tk.HORIZONTAL, command=lambda v: self.update_prominence_label()).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        prom_slider = ttk.Scale(prom_frame, from_=0.01, to=10, variable=self.prominence_threshold, orient=tk.HORIZONTAL)
+        print(f"Prominence threshold set to {self.prominence_threshold.get()}")
+        prom_slider.configure(command=self.on_prominence_change)
+        prom_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
         self.prom_label = ttk.Label(prom_frame, text=f"{self.prominence_threshold.get():.1f}", font=('', 8), width=5)
         self.prom_label.pack(side=tk.LEFT)
-        
-
-        
+        print(f"DEBUG: Created prominence slider, range 0.01-100 (for now), current value = {self.prominence_threshold.get()}")
 
         # Smoothing
         smooth_frame = ttk.Frame(scrollable_frame)
@@ -537,9 +631,18 @@ class HarmonicAnnotator:
         ttk.Scale(smooth_frame, from_=0, to=51, variable=self.curve_smoothing_window, orient=tk.HORIZONTAL, command=lambda v: self.on_smoothing_change(v)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
         self.smooth_label = ttk.Label(smooth_frame, text=f"{self.curve_smoothing_window.get()}", font=('', 8), width=5)
         self.smooth_label.pack(side=tk.LEFT)
-
+        print(f"DEBUG: Created smoothing slider, range 0-51 (for now), current value = {self.curve_smoothing_window.get()}")
 
         ttk.Button(scrollable_frame, text="Recompute Harmonics", command=self.redetect_harmonics).pack(fill=tk.X, pady=2)
+
+        ttk.Button(scrollable_frame, text="Load Correction Model", command=self.load_correction_model).pack(fill=tk.X, pady=2)
+
+        ttk.Button(scrollable_frame, text="Add Harmonic Line", command=self.add_manual_harmonic).pack(fill=tk.X, pady=2)
+        
+        ttk.Button(scrollable_frame, text="Add Valley Line", command=self.add_manual_valley).pack(fill=tk.X, pady=2)
+        
+        ttk.Button(scrollable_frame, text="Clear Manual Lines", command=self.clear_manual_lines).pack(fill=tk.X, pady=2)
+
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
         
@@ -769,11 +872,26 @@ class HarmonicAnnotator:
             window='hann'
         )
         
+
+        # Clear detection data
+        self.harmonic_tracks = []
+        self.valley_tracks = {}
+        self.boundary_data = None
+        self.fundamental_freq = None
+        self.harmonic_series = []
+
+        # Clear corrections
+        self.harmonic_corrections = []
+        
+        # Clear manual additions
+        self.manual_harmonics = []
+        self.manual_valleys = []
+
+
         # Detect harmonics
         self.detect_harmonics()
         
-        # Clear corrections
-        self.harmonic_corrections = []
+
         
         # Load existing annotations
         annotation_file = self.get_annotation_file()
@@ -809,37 +927,152 @@ class HarmonicAnnotator:
     
     # ===== HARMONIC DETECTION =====
     
+    # def detect_harmonics_initial(self):
+    #     """Detect harmonics using fuzzy valley method"""
+    #     if self.tracker is None:
+    #         return
+        
+    #     # Compute PSD
+    #     psd_freqs, psd, psd_db = self.tracker.analyze_psd(
+    #         nperseg=self.psd_nperseg.get(),
+    #         noverlap=self.psd_noverlap.get(),
+    #         window='hann'
+    #     )
+        
+    #     # Detect fundamental and harmonics
+    #     self.fundamental_freq, self.harmonic_series = \
+    #         self.tracker.detect_fundamental_and_harmonics_from_psd(
+    #             psd_freqs, psd_db,
+    #             fmin=self.fmin.get(),
+    #             fmax=self.fmax.get(),
+    #             prominence_threshold=self.prominence_threshold.get(),
+    #             max_harmonics=self.max_harmonics.get(),
+    #             harmonic_tolerance=0.1
+    #         )
+        
+    #     if self.fundamental_freq is None:
+    #         print("⚠ No fundamental detected")
+    #         self.harmonic_tracks = []
+    #         self.valley_tracks = {}
+    #         self.boundary_data = None
+    #         return
+        
+    #     # Track harmonics
+    #     self.harmonic_tracks = self.tracker.track_harmonics_with_template(
+    #         self.harmonic_series,
+    #         fmin=self.fmin.get(),
+    #         fmax=self.fmax.get(), 
+    #         curve_smoothing_window=self.curve_smoothing_window.get()
+    #     )
+        
+    #     # Find valleys
+    #     self.valley_tracks = self.tracker.find_valleys_between_harmonics(
+    #         self.harmonic_tracks,
+    #         valley_margin=0.2
+    #     )
+        
+    #     # Compute boundary data (for visualization)
+    #     self.compute_boundary_data()
+
+    #     # Apply learned corrections if model available
+    #     if self.corrector_model is not None:
+    #         self.tracker.apply_learned_corrections(self.corrector_model)
+        
+    #     print(f"✓ Detected F0={self.fundamental_freq:.1f} Hz, {len(self.harmonic_series)} harmonics")
+
+    #     # Debug: print first few harmonic frequencies
+    #     if self.harmonic_tracks and len(self.harmonic_tracks) > 0:
+    #         first_frame = self.harmonic_tracks[0]
+    #         print(f"DEBUG - First frame harmonics:")
+    #         for h in first_frame['harmonics'][:3]:
+    #             print(f"  H{h['harmonic_number']}: {h['actual_frequency']:.1f} Hz")
+
+    #     # Debug: print first valley
+    #     if self.valley_tracks:
+    #         first_valley_key = list(self.valley_tracks.keys())[0]
+    #         first_valley = self.valley_tracks[first_valley_key][0]
+    #         print(f"DEBUG - First valley: {first_valley['frequency']:.1f} Hz between {first_valley['between_harmonics']}")
+    
+
+
+
     def detect_harmonics(self):
-        """Detect harmonics using fuzzy valley method"""
+        """Detect harmonics by finding brightest point and inferring F0"""
         if self.tracker is None:
             return
         
-        # Compute PSD
-        psd_freqs, psd, psd_db = self.tracker.analyze_psd(
-            nperseg=self.psd_nperseg.get(),
-            noverlap=self.psd_noverlap.get(),
-            window='hann'
-        )
+        # # Find absolute brightest point in frequency range
+        # freq_mask = (self.tracker.freqs >= self.fmin.get()) & (self.tracker.freqs <= self.fmax.get())
+        # masked_spec = self.tracker.log_magnitude.copy()
+        # masked_spec[~freq_mask, :] = -np.inf
+        # max_idx = np.unravel_index(np.argmax(masked_spec), masked_spec.shape)
+        # brightest_freq_idx, brightest_time_idx = max_idx
+        # brightest_freq = self.tracker.freqs[brightest_freq_idx]
+        # print(f"✓ Brightest point: {brightest_freq:.1f} Hz at t={self.tracker.times[brightest_time_idx]:.3f}s")
+    
+
+        # Find prominent peaks in time-averaged spectrum
+        mean_spectrum = np.mean(self.tracker.log_magnitude, axis=1)
+        freq_mask = (self.tracker.freqs >= self.fmin.get()) & (self.tracker.freqs <= self.fmax.get())
+        masked_mean = mean_spectrum.copy()
+        masked_mean[~freq_mask] = -np.inf
         
-        # Detect fundamental and harmonics
-        self.fundamental_freq, self.harmonic_series = \
-            self.tracker.detect_fundamental_and_harmonics_from_psd(
-                psd_freqs, psd_db,
-                fmin=self.fmin.get(),
-                fmax=self.fmax.get(),
-                prominence_threshold=self.prominence_threshold.get(),
-                max_harmonics=self.max_harmonics.get(),
-                harmonic_tolerance=0.1
-            )
+        peaks, _ = find_peaks(masked_mean, 
+                            prominence=self.prominence_threshold.get(),
+                            distance=max(5, int(50 / (self.tracker.freqs[1] - self.tracker.freqs[0]))))
         
-        if self.fundamental_freq is None:
-            print("⚠ No fundamental detected")
+        if len(peaks) == 0:
+            print("⚠ No peaks detected")
             self.harmonic_tracks = []
             self.valley_tracks = {}
             self.boundary_data = None
             return
         
-        # Track harmonics
+        peak_freqs = self.tracker.freqs[peaks]
+        peak_mags = mean_spectrum[peaks]
+       
+        print(f"  Found {len(peaks)} prominent peaks")
+        sorted_idx = np.argsort(peak_mags)[::-1]
+        for i in sorted_idx[:5]:
+            print(f"    {peak_freqs[i]:.1f} Hz: {peak_mags[i]:.1f} dB")
+        
+        # Use strongest peak
+        strongest_idx = np.argmax(peak_mags)
+        brightest_freq = peak_freqs[strongest_idx]
+        
+        print(f"✓ Strongest prominent peak: {brightest_freq:.1f} Hz")
+        print(f"  Found {len(peaks)} total peaks (prominence={self.prominence_threshold.get()})")
+
+
+        # # Assume brightest point is located within a harmonic, find F0 by testing divisors
+        # # Test if brightest is H1, H2, H3, etc.
+        # possible_f0s = []
+        # for harmonic_num in range(1, 6):  # Test if it's the 1st through 5th harmonic
+        #     candidate_f0 = brightest_freq / harmonic_num
+        #     if candidate_f0 >= self.fmin.get():
+        #         possible_f0s.append((candidate_f0, harmonic_num))
+        # # Use lowest plausible F0
+        # self.fundamental_freq = possible_f0s[-1][0]  # Lowest F0
+        # print(f"  Inferred F0: {self.fundamental_freq:.1f} Hz (brightest is H{possible_f0s[-1][1]})")
+        
+        # Use the strongest peak as F0
+        self.fundamental_freq = brightest_freq
+        print(f"  Using strongest peak as F0: {self.fundamental_freq:.1f} Hz")
+
+        # print(f"  Possible F0 candidates tested:")
+        # for f0, harm_num in possible_f0s:
+        #     print(f"    If brightest is H{harm_num}: F0 = {f0:.1f} Hz")
+        
+        print(f"  Harmonic series: {[f'{h:.1f}' for h in self.harmonic_series]}")        
+        # Build harmonic series
+        self.harmonic_series = []
+        for i in range(1, self.max_harmonics.get() + 1):
+            harmonic_freq = self.fundamental_freq * i
+            if harmonic_freq <= self.fmax.get():
+                self.harmonic_series.append(harmonic_freq)
+        
+        # Track harmonics across time
+        print(f"DEBUG: Passing harmonic_series to tracker: {self.harmonic_series}")
         self.harmonic_tracks = self.tracker.track_harmonics_with_template(
             self.harmonic_series,
             fmin=self.fmin.get(),
@@ -853,11 +1086,33 @@ class HarmonicAnnotator:
             valley_margin=0.2
         )
         
-        # Compute boundary data (for visualization)
+        # Compute boundary data
         self.compute_boundary_data()
+    
+        # Debug: print first few harmonic frequencies
+        if self.harmonic_tracks and len(self.harmonic_tracks) > 0:
+            first_frame = self.harmonic_tracks[0]
+            print(f"DEBUG - First frame harmonics:")
+            for h in first_frame['harmonics'][:3]:
+                print(f"  H{h['harmonic_number']}: {h['actual_frequency']:.1f} Hz")
+
+        # Debug: print first valley
+        if self.valley_tracks:
+            first_valley_key = list(self.valley_tracks.keys())[0]
+            first_valley = self.valley_tracks[first_valley_key][0]
+            print(f"DEBUG - First valley: {first_valley['frequency']:.1f} Hz between {first_valley['between_harmonics']}")
+            
+        # Apply learned corrections if model available
+        if self.corrector_model is not None:
+            self.tracker.apply_learned_corrections(self.corrector_model)
         
         print(f"✓ Detected F0={self.fundamental_freq:.1f} Hz, {len(self.harmonic_series)} harmonics")
-    
+
+
+
+
+
+
     def compute_boundary_data(self):
         """Compute valley boundaries for visualization"""
         valley_boundaries = []
@@ -1506,8 +1761,81 @@ class HarmonicAnnotator:
 
 
 
-
-
+    # Harmonic Corrections - Manual adding
+    def add_manual_harmonic(self):
+        """Add a manual harmonic line at specified frequency"""
+        if self.tracker is None:
+            messagebox.showinfo("No Audio", "Load audio first")
+            return
+        
+        from tkinter import simpledialog
+        
+        freq = simpledialog.askfloat("Add Harmonic", 
+                                    f"Enter frequency (Hz)\nRange: {self.fmin_plot.get()}-{self.fmax_plot.get()}",
+                                    minvalue=self.fmin_plot.get(),
+                                    maxvalue=self.fmax_plot.get())
+        
+        if freq is None:
+            return
+        
+        harmonic_colors = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'brown']
+        
+        # Assign harmonic number based on existing manual harmonics
+        harmonic_num = len(self.manual_harmonics) + 1
+        color = harmonic_colors[harmonic_num % len(harmonic_colors)]
+        
+        self.manual_harmonics.append({
+            'freq': freq,
+            'harmonic_num': harmonic_num,
+            'color': color
+        })
+        
+        print(f"✓ Added manual harmonic H{harmonic_num} at {freq:.1f} Hz")
+        self.update_display(recompute=False)
+    
+    def add_manual_valley(self):
+        """Add a manual valley line at specified frequency"""
+        if self.tracker is None:
+            messagebox.showinfo("No Audio", "Load audio first")
+            return
+        
+        from tkinter import simpledialog
+        
+        freq = simpledialog.askfloat("Add Valley", 
+                                    f"Enter frequency (Hz)\nRange: {self.fmin_plot.get()}-{self.fmax_plot.get()}",
+                                    minvalue=self.fmin_plot.get(),
+                                    maxvalue=self.fmax_plot.get())
+        
+        if freq is None:
+            return
+        
+        valley_colors = ['cyan', 'magenta', 'lime', 'white', 'gold']
+        
+        color = valley_colors[len(self.manual_valleys) % len(valley_colors)]
+        
+        self.manual_valleys.append({
+            'freq': freq,
+            'color': color
+        })
+        
+        print(f"✓ Added manual valley at {freq:.1f} Hz")
+        self.update_display(recompute=False)
+    
+    def clear_manual_lines(self):
+        """Clear all manual harmonics and valleys"""
+        if not self.manual_harmonics and not self.manual_valleys:
+            messagebox.showinfo("No Lines", "No manual lines to clear")
+            return
+        
+        n_harmonics = len(self.manual_harmonics)
+        n_valleys = len(self.manual_valleys)
+        
+        if messagebox.askyesno("Clear Lines", 
+                            f"Remove {n_harmonics} manual harmonics and {n_valleys} manual valleys?"):
+            self.manual_harmonics = []
+            self.manual_valleys = []
+            print("✓ Cleared manual lines")
+            self.update_display(recompute=False)
 
 
 
@@ -1565,6 +1893,9 @@ class HarmonicAnnotator:
                 for collection in collections_to_remove:
                     collection.remove()
             
+
+
+
             # Draw valley boundaries
             if self.show_valleys.get() and self.boundary_data:
                 valley_colors = ['cyan', 'magenta', 'lime', 'white', 'gold']
@@ -1580,6 +1911,17 @@ class HarmonicAnnotator:
                 self.ax.plot(self.tracker.times, self.boundary_data['dynamic_upper'],
                            '--', color='orange', linewidth=2, alpha=0.7, label='Upper')
             
+                # Draw manual valleys
+                for valley in self.manual_valleys:
+                    self.ax.axhline(valley['freq'], color=valley['color'], 
+                                linestyle=':', linewidth=2, alpha=0.9, 
+                                label=f"Manual valley {valley['freq']:.0f}Hz")
+
+
+
+
+
+
             # Draw harmonic ridges
             if self.show_harmonics.get() and self.harmonic_tracks:
                 harmonic_colors = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'brown']
@@ -1600,6 +1942,13 @@ class HarmonicAnnotator:
                                    markersize=3, linewidth=2, alpha=0.7,
                                    label=f'H{harm_num}')
             
+                    # Draw manual harmonics
+                    for harmonic in self.manual_harmonics:
+                        self.ax.axhline(harmonic['freq'], color=harmonic['color'], 
+                                    linestyle='-', linewidth=2, alpha=0.9,
+                                    label=f"Manual H{harmonic['harmonic_num']} ({harmonic['freq']:.0f}Hz)")
+
+
 
             # Draw changepoints
             if self.changepoints:
@@ -1635,7 +1984,9 @@ class HarmonicAnnotator:
             return
         self.ax.set_ylim(self.fmin_plot.get(), self.fmax_plot.get())
         self.canvas.draw_idle()
-    
+
+       
+
     def reset_zoom(self):
         """Reset zoom to full view"""
         if self.tracker is None:
@@ -1674,12 +2025,20 @@ class HarmonicAnnotator:
     
     def update_correction_info(self):
         """Update correction count"""
-        self.correction_info.config(text=f"Corrections: {len(self.harmonic_corrections)}")
+        val = self.harmonic_corrections()
+        print(f"dEbuG update_correction_info called: val={val}, type={type(val)}")
+        self.correction_info.config(text=f"Corrections: {len(val)}")
     
-    def update_prominence_label(self):
-        """Update prominence label"""
-        self.prom_label.config(text=f"{self.prominence_threshold.get():.1f}")
 
+    def on_prominence_change(self, value):
+        """Handle prominence slider change"""
+        val = float(value)
+        self.prom_label.config(text=f"{val:.2f}")
+        
+        # Recompute harmonics with new prominence
+        if self.tracker is not None:
+            self.detect_harmonics()
+            self.update_display(recompute=True)
 
 
     def on_smoothing_change(self, value):
@@ -1695,7 +2054,6 @@ class HarmonicAnnotator:
         if self.tracker is not None and self.harmonic_tracks:
             self.compute_boundary_data()
             self.detect_harmonics()
-
             self.update_display(recompute=True)
 
 
@@ -1926,6 +2284,11 @@ class HarmonicAnnotator:
     
     def save_annotations(self):
         """Save harmonic corrections to JSON"""
+        
+        # Prepare training data
+        training_data = self.prepare_correction_pairs()
+        self.update_model(training_data)
+
         try:
             if not self.audio_files or self.annotation_dir is None:
                 return
@@ -1960,6 +2323,12 @@ class HarmonicAnnotator:
                 json.dump(data, f, indent=2)
             
             self.changes_made = False
+
+            # Prepare training data
+            training_data = self.prepare_correction_pairs()
+            self.update_model(training_data)
+
+
             self.update_display(recompute=False)
             print(f"✓ Saved {len(self.harmonic_corrections)} corrections to {annotation_file.name}")
             
@@ -1967,6 +2336,103 @@ class HarmonicAnnotator:
             print(f"ERROR saving annotations: {e}")
             import traceback
             traceback.print_exc()
+
+
+
+    # Model Logic
+
+    def load_correction_model(self):
+        """Load trained correction model"""
+        if self.annotation_dir is None:
+            messagebox.showinfo("No Directory", "Load audio directory first")
+            return
+        
+        model_file = self.annotation_dir / "harmonic_corrector.pkl"
+        
+        if not model_file.exists():
+            messagebox.showinfo("No Model", 
+                            f"No trained model at:\n{model_file}\n\n"
+                            "Annotate files, then run:\n"
+                            f"python harmonic_learner.py {self.annotation_dir}")
+            return
+        
+        try:
+            from harmonic_learner import HarmonicCorrector
+            self.corrector_model = HarmonicCorrector.load(model_file)
+            messagebox.showinfo("Model Loaded", 
+                            f"✓ Loaded correction model\n"
+                            f"Redetecting harmonics with corrections...")
+            self.redetect_harmonics()
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Failed to load model:\n{e}")
+
+
+    def prepare_correction_pairs(self):
+        """Extract correction pairs for model training
+        
+        Returns:
+            List of dicts with {spectrogram_slice, correct_freq, incorrect_freq, harmonic_num}
+        """
+        if not self.harmonic_corrections or self.tracker is None:
+            return []
+        
+        pairs = []
+        
+        for correction in self.harmonic_corrections:
+            time_val = correction['time']
+            time_idx = np.argmin(np.abs(self.tracker.times - time_val))
+            
+            # Extract local spectrogram context (±5 frames)
+            context_width = 5
+            t_start = max(0, time_idx - context_width)
+            t_end = min(self.tracker.magnitude.shape[1], time_idx + context_width + 1)
+            
+            # Frequency range around correction (±100 Hz)
+            freq_range = 100
+            old_freq_idx = np.argmin(np.abs(self.tracker.freqs - correction['old_freq']))
+            new_freq_idx = np.argmin(np.abs(self.tracker.freqs - correction['new_freq']))
+            
+            f_start = max(0, min(old_freq_idx, new_freq_idx) - int(freq_range / (self.tracker.freqs[1] - self.tracker.freqs[0])))
+            f_end = min(len(self.tracker.freqs), max(old_freq_idx, new_freq_idx) + int(freq_range / (self.tracker.freqs[1] - self.tracker.freqs[0])))
+            
+            spec_slice = self.tracker.log_magnitude[f_start:f_end, t_start:t_end]
+            
+            pairs.append({
+                'spectrogram': spec_slice,
+                'freqs': self.tracker.freqs[f_start:f_end],
+                'times': self.tracker.times[t_start:t_end],
+                'old_freq': correction['old_freq'],
+                'new_freq': correction['new_freq'],
+                'harmonic_num': correction['harmonic_num'],
+                'audio_file': str(self.audio_files[self.current_file_idx])
+            })
+        
+        return pairs
+    
+    def update_model(self, training_data):
+        """Inject corrections into model (stub for now)"""
+        if not training_data:
+            return
+        
+        # Save to disk for batch training
+        training_file = self.annotation_dir / "training_corrections.pkl"
+        
+        import pickle
+        
+        if training_file.exists():
+            with open(training_file, 'rb') as f:
+                existing_data = pickle.load(f)
+        else:
+            existing_data = []
+        
+        existing_data.extend(training_data)
+        
+        with open(training_file, 'wb') as f:
+            pickle.dump(existing_data, f)
+        
+        print(f"✓ Appended {len(training_data)} correction pairs to training set ({len(existing_data)} total)")
+
+
 
 
 # ===== MAIN ENTRY POINT =====
