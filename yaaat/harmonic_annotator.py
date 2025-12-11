@@ -628,7 +628,7 @@ class HarmonicAnnotator:
         smooth_frame = ttk.Frame(scrollable_frame)
         smooth_frame.pack(fill=tk.X, pady=2)
         ttk.Label(smooth_frame, text="Curve smoothing:", font=('', 8)).pack(side=tk.LEFT)
-        ttk.Scale(smooth_frame, from_=0, to=51, variable=self.curve_smoothing_window, orient=tk.HORIZONTAL, command=lambda v: self.on_smoothing_change(v)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        ttk.Scale(smooth_frame, from_=0, to=100, variable=self.curve_smoothing_window, orient=tk.HORIZONTAL, command=lambda v: self.on_smoothing_change(v)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
         self.smooth_label = ttk.Label(smooth_frame, text=f"{self.curve_smoothing_window.get()}", font=('', 8), width=5)
         self.smooth_label.pack(side=tk.LEFT)
         print(f"DEBUG: Created smoothing slider, range 0-51 (for now), current value = {self.curve_smoothing_window.get()}")
@@ -810,7 +810,7 @@ class HarmonicAnnotator:
     
     def load_test_audio(self):
         """Load bundled test audio files"""
-        test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'kiwi'
+        test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'syllables' / 'kiwi'
         
         if not test_audio_dir.exists():
             messagebox.showinfo("No Test Data", "Test audio files not found")

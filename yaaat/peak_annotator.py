@@ -798,7 +798,7 @@ class PeakAnnotator:
         from pathlib import Path
         
         # Go up to package dir, then up to repo root, then into test_files
-        test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'kiwi'
+        test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'syllables' / 'kiwi'
         
         if not test_audio_dir.exists():
             print(f"DEBUG: Looking for test audio at: {test_audio_dir}")

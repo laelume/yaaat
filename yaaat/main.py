@@ -10,12 +10,17 @@ try:
     from yaaat.peak_annotator import PeakAnnotator
     from yaaat.harmonic_annotator import HarmonicAnnotator
     from yaaat.sequence_annotator import SequenceAnnotator
+    from yaaat.base_annotator import BaseAnnotator
+    from yaaat.harmonic_layer import HarmonicLayer
+
 except ImportError:
     # Script mode: python main.py
     from changepoint_annotator import ChangepointAnnotator
     from peak_annotator import PeakAnnotator
     from harmonic_annotator import HarmonicAnnotator
     from sequence_annotator import SequenceAnnotator
+    from base_annotator import BaseAnnotator
+    from harmonic_layer import HarmonicLayer
 
 
 class YAAATApp:
@@ -38,21 +43,27 @@ class YAAATApp:
         peak_frame = ttk.Frame(self.notebook)
         harmonic_frame = ttk.Frame(self.notebook)
         sequence_frame = ttk.Frame(self.notebook)
+        base_frame = ttk.Frame(self.notebook)
+        harmonic_layer_frame = ttk.Frame(self.notebook)
         
         # Add tabs
         self.notebook.add(changepoint_frame, text="Changepoint Annotator")
         self.notebook.add(peak_frame, text="Peak Annotator")
         self.notebook.add(harmonic_frame, text="Harmonic Annotator")
         self.notebook.add(sequence_frame, text="Sequence Annotator")
+        self.notebook.add(base_frame, text="Base Annotator")
+        self.notebook.add(harmonic_layer_frame, text="Harmonic Layer")
 
         # Initialize tools (pass frames as parent)
         self.changepoint_tool = ChangepointAnnotator(changepoint_frame)
         self.peak_tool = PeakAnnotator(peak_frame)
         self.harmonic_tool = HarmonicAnnotator(harmonic_frame)
         self.sequence_tool = SequenceAnnotator(sequence_frame)
+        self.base_tool = BaseAnnotator(base_frame)
+        self.harmonic_layer_tool = HarmonicLayer(harmonic_layer_frame)
         
         # Share audio files across all tabs
-        self.tools = [self.changepoint_tool, self.peak_tool, self.harmonic_tool, self.sequence_tool]
+        self.tools = [self.changepoint_tool, self.peak_tool, self.harmonic_tool, self.sequence_tool, self.base_tool, self.harmonic_layer_tool]
         
         # Bind tab change event
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
@@ -77,10 +88,17 @@ class YAAATApp:
             if hasattr(tool, 'save_dir_button'):
                 tool.save_dir_button.config(text=f"📁 {tool.annotation_dir}")
             
-            # Load the current file in the tool
-            if tool.audio_files:
+            # # Load the current file in the tool
+            # if tool.audio_files:
+            #     tool.load_current_file()
+            # (modified to  persist audio files across tabs, as below)
+            # Only reload if file index changed or tool has no loaded audio
+            if tool.current_file_idx != source_tool.current_file_idx or tool.y is None:
                 tool.load_current_file()
-
+            else:
+                # Keep existing in-memory annotations (harmonics, contours, etc.)
+                tool.update_display(recompute_spec=False)
+                
 
     def on_tab_change(self, event):
         """Handle tab switching - sync audio state"""
@@ -95,8 +113,15 @@ class YAAATApp:
                 break
         
         if source_tool and source_tool is not current_tool:
+            # First, mark that we're syncing tabs (tools can use this to suppress autosave etc.)
+            for t in self.tools:
+                t._syncing_tabs = True
+            # Then sync states
             self.sync_audio_state(source_tool)
             print(f"Synced audio from {source_tool.__class__.__name__} to {current_tool.__class__.__name__}")
+            # Clear syncing flag
+            for t in self.tools:
+                t._syncing_tabs = False
 
 
 def main():
