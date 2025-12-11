@@ -88,13 +88,20 @@ class BaseAnnotator:
         
         # Cache the spectrogram image
         self.spec_image = None
+
+        # Waveform display state
+        self.show_waveform = tk.BooleanVar(value=False)
+        self.waveform_alpha = tk.DoubleVar(value=0.2)
+        self.waveform_ax = None  # secondary axis for waveform
         
         # Navigation repeat timer
         self.repeat_id = None
         
         self.setup_ui()
         self.root.after(100, self.auto_load_directory)
-    
+
+
+
     def setup_ui(self):
         """Create the base user interface"""
         main_frame = ttk.Frame(self.root)
@@ -200,6 +207,7 @@ class BaseAnnotator:
         
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
         
+
         # ===== SPECTROGRAM PARAMETERS =====
         ttk.Label(scrollable_frame, text="Spectrogram:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
         
@@ -241,6 +249,34 @@ class BaseAnnotator:
         self.scale_button = tk.Button(scale_frame, text="Linear", width=8, command=self.toggle_scale, bg='lightgreen')
         self.scale_button.pack(side=tk.LEFT, padx=2)
         
+        waveform_frame = ttk.LabelFrame(scrollable_frame, text="Waveform", padding=3)
+        waveform_frame.pack(fill=tk.X, pady=2)
+
+        # Show waveform checkbox
+        ttk.Checkbutton(
+            waveform_frame,
+            text="Show waveform",
+            variable=self.show_waveform,
+            command=lambda: self.update_display()
+        ).pack(anchor=tk.W)
+
+        # Alpha slider (about half panel width via fixed length)
+        wf_alpha_frame = ttk.Frame(waveform_frame)
+        wf_alpha_frame.pack(fill=tk.X, pady=1)
+
+        ttk.Label(wf_alpha_frame, text="Transparency:", font=('', 8)).pack(side=tk.LEFT)
+
+        self.waveform_alpha_scale = ttk.Scale(
+            wf_alpha_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            variable=self.waveform_alpha,
+            length=150,  # ~half width of typical control panel
+            command=self.on_waveform_alpha_change
+        )
+        self.waveform_alpha_scale.pack(side=tk.LEFT, padx=4)
+
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
         
         # ===== CUSTOM CONTROLS (override in subclass) =====
@@ -333,11 +369,15 @@ class BaseAnnotator:
         self.canvas.draw_idle()
         
         self.update_button_highlights()
-    
+
+
+
     def setup_custom_controls(self):
         """Override this method to add algorithm-specific controls"""
         ttk.Label(self.control_panel, text="No custom controls", font=('', 8, 'italic')).pack(pady=2)
-    
+
+
+
     # ===== AUDIO LOADING =====
     
     def load_directory(self):
@@ -564,7 +604,52 @@ class BaseAnnotator:
             return utils.hz_to_mel(fmin_hz), utils.hz_to_mel(fmax_hz)
         else:
             return fmin_hz, fmax_hz
-    
+
+
+
+    def on_waveform_alpha_change(self, value):
+        """Update waveform transparency when slider moves."""
+        if self.show_waveform.get():
+            self.update_display()
+
+
+
+    def draw_waveform(self):
+        """Draw waveform and smoothed curve on a twin y-axis."""
+        if self.y is None or self.sr is None:
+            return
+
+        # Create or clear twin axis
+        if self.waveform_ax is None:
+            self.waveform_ax = self.ax.twinx()
+            # Put amplitude axis on the right, slightly offset if needed
+            self.waveform_ax.spines['right'].set_position(('outward', 40))
+            self.waveform_ax.yaxis.set_label_position('right')
+            self.waveform_ax.yaxis.set_ticks_position('right')
+        else:
+            self.waveform_ax.cla()
+
+        # Time axis
+        t = np.arange(len(self.y)) / self.sr
+
+        alpha = float(self.waveform_alpha.get())
+        alpha = min(max(alpha, 0.0), 1.0)
+
+        # Raw waveform
+        self.waveform_ax.plot(t, self.y, color='cyan', alpha=alpha, linewidth=0.6)
+
+        # Smooth curve (5 ms window)
+        window = max(1, int(self.sr * 0.005))
+        if window > 1 and len(self.y) >= window:
+            smooth = np.convolve(self.y, np.ones(window) / window, mode='same')
+            self.waveform_ax.plot(t, smooth, color='yellow', linewidth=1, alpha=min(1.0, alpha + 0.3))
+
+        self.waveform_ax.set_ylabel("Amplitude", fontsize=8)
+        self.waveform_ax.tick_params(axis='y', labelsize=7)
+        self.waveform_ax.grid(False)
+
+
+
     # ===== DISPLAY =====
     
     def update_display(self, recompute_spec=False):
@@ -576,7 +661,15 @@ class BaseAnnotator:
             if recompute_spec or self.spec_image is None:
                 # Full redraw
                 self.ax.clear()
-                
+
+                # Remove previous waveform axis on full redraw
+                if self.waveform_ax is not None:
+                    try:
+                        self.waveform_ax.remove()
+                    except Exception:
+                        pass
+                    self.waveform_ax = None
+
                 extent = [
                     self.times[0],
                     self.times[-1],
@@ -603,7 +696,7 @@ class BaseAnnotator:
                 self.ax.set_ylim(ymin, ymax)
             
             else:
-                # Quick update - remove overlays only
+                # Remove overlays only
                 import matplotlib.collections
                 collections_to_remove = [c for c in self.ax.collections 
                                         if isinstance(c, matplotlib.collections.PathCollection)]
@@ -619,10 +712,25 @@ class BaseAnnotator:
                 # Clear previous text on line move
                 for text in self.ax.texts[:]:
                     text.remove()
+
+                # Clear waveform axis contents
+                if self.waveform_ax is not None:
+                    self.waveform_ax.cla()
             
             # Draw custom overlays (override in subclass)
             self.draw_custom_overlays()
             
+            # Draw waveform if enabled
+            if self.show_waveform.get():
+                self.draw_waveform()
+            elif self.waveform_ax is not None:
+                # If turned off, remove from figure
+                try:
+                    self.waveform_ax.remove()
+                except Exception:
+                    pass
+                self.waveform_ax = None
+
             # Update title
             filename = self.audio_files[self.current_file_idx].name
             save_marker = "" if self.changes_made else "✓ "
