@@ -7,9 +7,16 @@ from .changepoint_annotator import ChangepointAnnotator, main
 from .peak_annotator import PeakAnnotator
 from .harmonic_annotator import HarmonicAnnotator
 from .sequence_annotator import SequenceAnnotator
+from .base_annotator import BaseAnnotator
+
+from .harmonic_layer import HarmonicLayer
 from .main import YAAATApp, main
 
-__version__ = "0.1.8"
+__version__ = "0.1.12"
 __author__ = "laelume"
 __license__ = "MIT"
-__all__ = ["ChangepointAnnotator", "PeakAnnotator", "HarmonicAnnotator", "YAAATApp"]
+__all__ = [
+    "ChangepointAnnotator", "PeakAnnotator", "HarmonicAnnotator", "SequenceAnnotator", "BaseAnnotator", 
+    "HarmonicLayer", 
+    "YAAATApp"
+    ]

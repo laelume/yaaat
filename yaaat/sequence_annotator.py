@@ -393,7 +393,7 @@ class SequenceAnnotator:
 
     def load_test_audio(self):
         """Load bundled test audio files"""
-        test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'jelatik' / '2512'
+        test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'sequencces' / 'jelatik'
         
         if not test_audio_dir.exists():
             messagebox.showinfo("No Test Data", "Test audio files not found in package")
