@@ -1,6 +1,6 @@
 """
 Harmonic Layer - Minimal harmonic annotation tool
-Based on base_annotator.py
+Based on base_layer.py
 Focuses on F0 detection and harmonic manipulation
 """
 
@@ -12,15 +12,16 @@ from tkinter import ttk, messagebox
 from pathlib import Path
 import json
 
-from base_annotator import BaseAnnotator
+from layers.base_layer import BaseLayer
 
-try:
-    from yaaat import utils
-except ImportError:
-    import utils
+# try:
+#     from yaaat import utils
+# except ImportError:
+#     import utils
 
+from utils import utils 
 
-class HarmonicLayer(BaseAnnotator):
+class HarmonicLayer(BaseLayer):
     """Simplified harmonic annotator focusing on F0 and harmonic lines"""
     
     def __init__(self, root):
@@ -666,6 +667,9 @@ class HarmonicLayer(BaseAnnotator):
                     times, freqs = zip(*contour)
                     color = self.get_harmonic_color(harm_num)
                     self.ax.plot(times, freqs, color=color, alpha=0.5, linewidth=1)
+        
+        # Add global annotation overlays (from API)
+        self.draw_shared_point_annotations()
 
     
     def get_harmonic_color(self, harm_num):

@@ -9,12 +9,13 @@ import json
 from natsort import natsorted
 import pysoniq
 
-try: 
-    from yaaat import utils
-except ImportError:
-    print("/utils subdir does not exist")
-    import utils
+# try: 
+#     from yaaat import utils
+# except ImportError:
+#     print("/utils subdir does not exist")
+#     import utils
 
+from utils import utils 
 
 class SequenceAnnotator:
     """Interactive tool for annotating audio sequences with start/stop times."""

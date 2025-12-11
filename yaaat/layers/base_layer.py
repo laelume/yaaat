@@ -1,6 +1,6 @@
 """
-Base Annotator - Core audio visualization and navigation template
-Extracted from changepoint_annotator.py
+Base Layer - Core audio visualization and navigation template
+Extracted from changepoint_annotator.py (original file) 
 Provides: audio loading, spectrogram, plotting, navigation, playback, zoom/pan
 """
 
@@ -19,14 +19,15 @@ from natsort import natsorted
 
 import pysoniq
 
-try: 
-    from yaaat import utils
-except ImportError: 
-    print("/utils subdir does not exist")
-    import utils
+# try: 
+#     from yaaat import utils
+# except ImportError: 
+#     print("/utils subdir does not exist")
+#     import utils
 
+from utils import utils 
 
-class BaseAnnotator:
+class BaseLayer:
     """Base class for audio annotation tools
     
     Provides core functionality:
@@ -45,6 +46,10 @@ class BaseAnnotator:
     - load_custom_data() - Load algorithm-specific annotations
     """
     
+    # Initialize global state
+    # Global, per-file, per-class point annotations
+    global_point_annotations = {}
+
     def __init__(self, root):
         self.root = root
         if isinstance(root, tk.Tk):
@@ -279,12 +284,18 @@ class BaseAnnotator:
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
         
+
+
+
         # ===== CUSTOM CONTROLS (override in subclass) =====
         ttk.Label(scrollable_frame, text="Custom Controls:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
         self.setup_custom_controls()
         
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
         
+
+
+
         # ===== ACTIONS =====
         ttk.Label(scrollable_frame, text="Actions:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
         
@@ -301,6 +312,9 @@ class BaseAnnotator:
             ttk.Button(button_grid, text=text, command=command, width=12).grid(
                 row=i//3, column=i%3, padx=2, pady=2, sticky='ew')
         
+
+
+
         # ===== RIGHT SPECTROGRAM PANEL =====
         plot_frame = ttk.Frame(main_frame)
         plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -371,10 +385,10 @@ class BaseAnnotator:
         self.update_button_highlights()
 
 
-
     def setup_custom_controls(self):
         """Override this method to add algorithm-specific controls"""
         ttk.Label(self.control_panel, text="No custom controls", font=('', 8, 'italic')).pack(pady=2)
+
 
 
 
@@ -417,6 +431,7 @@ class BaseAnnotator:
                 dataset_name = Path(directory).name
                 self.annotation_dir = Path(save_dir) / f"{dataset_name}_annotations"
                 self.annotation_dir.mkdir(exist_ok=True)
+                self.load_global_point_annotations() # Load shared annotations
             else:
                 return
         else:
@@ -426,6 +441,7 @@ class BaseAnnotator:
             self.annotation_dir = default_dir
         
         self.annotation_dir.mkdir(exist_ok=True)
+        self.load_global_point_annotations() # Load shared annotations
         
         self.current_file_idx = 0
         self.load_current_file()
@@ -452,6 +468,7 @@ class BaseAnnotator:
         default_dir = Path.home() / "yaaat_annotations" / "test_audio"
         default_dir.mkdir(parents=True, exist_ok=True)
         self.annotation_dir = default_dir
+        self.load_global_point_annotations() # Load shared annotations
         
         self.current_file_idx = 0
         self.load_current_file()
@@ -471,7 +488,8 @@ class BaseAnnotator:
                 dataset_name = last_dir.name
                 self.annotation_dir = Path.home() / "yaaat_annotations" / dataset_name
                 self.annotation_dir.mkdir(parents=True, exist_ok=True)
-                
+                self.load_global_point_annotations()  # Load shared annotations
+
                 self.current_file_idx = 0
                 self.load_current_file()
                 return
@@ -522,6 +540,41 @@ class BaseAnnotator:
         """Override this method to load algorithm-specific annotations"""
         pass
     
+
+
+
+
+
+
+
+
+
+    # Get bucket (global or class-specific) for current file
+    def _get_point_bucket(self, scope="class"):
+        if not self.audio_files:
+            return None
+
+        audio_path = str(self.audio_files[self.current_file_idx])
+        file_dict = BaseLayer.global_point_annotations.setdefault(audio_path, {})
+
+        if scope == "global":
+            return file_dict.setdefault("global", [])
+
+        class_name = self.__class__.__name__
+        return file_dict.setdefault(class_name, [])
+
+
+
+
+
+
+
+
+
+
+
+
+
     # ===== SPECTROGRAM =====
     
     def compute_spectrogram(self):
@@ -568,7 +621,28 @@ class BaseAnnotator:
         self.ax.set_xlim(xlim)
         self.ax.set_ylim(ylim)
         self.canvas.draw_idle()
-    
+
+
+
+    # Annotations for calling with API
+    def add_annotation_point(self, time_s, freq_hz, label=None, scope="class"):
+        bucket = self._get_point_bucket(scope)
+        if bucket is None:
+            return
+
+        bucket.append({
+            "t": float(time_s),
+            "f": float(freq_hz),
+            "label": "" if label is None else str(label),
+            "scope": scope,
+        })
+
+        self.changes_made = True
+        self.update_display()
+
+
+
+
     def update_button_highlights(self):
         """Highlight currently selected parameters"""
         for btn, val in self.nfft_buttons:
@@ -647,6 +721,7 @@ class BaseAnnotator:
         self.waveform_ax.set_ylabel("Amplitude", fontsize=8)
         self.waveform_ax.tick_params(axis='y', labelsize=7)
         self.waveform_ax.grid(False)
+
 
 
 
@@ -747,7 +822,34 @@ class BaseAnnotator:
     def draw_custom_overlays(self):
         """Override this method to draw algorithm-specific overlays"""
         pass
-    
+
+
+    # Draw global and class-specific points
+    def draw_shared_point_annotations(self):
+        if not self.audio_files:
+            return
+        audio_path = str(self.audio_files[self.current_file_idx])
+        file_dict = BaseLayer.global_point_annotations.get(audio_path, {})
+
+        # global points
+        for ann in file_dict.get("global", []):
+            self.ax.scatter(ann["t"], ann["f"], s=30, edgecolors="white", facecolors="none")
+            if ann["label"]:
+                self.ax.text(ann["t"], ann["f"], ann["label"], fontsize=7, color="white",
+                             va="bottom", ha="left")
+
+        # class-specific points
+        class_name = self.__class__.__name__
+        for ann in file_dict.get(class_name, []):
+            self.ax.scatter(ann["t"], ann["f"], s=30, edgecolors="cyan", facecolors="none")
+            if ann["label"]:
+                self.ax.text(ann["t"], ann["f"], ann["label"], fontsize=7, color="cyan",
+                             va="bottom", ha="left")
+
+
+
+
+
     def update_display_range(self):
         """Update frequency display range"""
         if self.y is None:
@@ -986,6 +1088,9 @@ class BaseAnnotator:
             import traceback
             traceback.print_exc()
     
+
+
+
     # ===== PLAYBACK =====
     
     def play_audio(self):
@@ -1026,6 +1131,9 @@ class BaseAnnotator:
         self.gain_label.config(text=f"{gain_percent}%")
         pysoniq.set_gain(gain)
     
+
+
+
     # ===== FILE NAVIGATION =====
     
     def jump_to_file(self):
@@ -1057,7 +1165,8 @@ class BaseAnnotator:
         
         if self.changes_made and not getattr(self, "_syncing_tabs", False):
             self.save_custom_data()
-        
+            self.save_global_point_annotations()
+
         pysoniq.stop()
         
         self.current_file_idx = (self.current_file_idx - 1) % len(self.audio_files)
@@ -1076,7 +1185,8 @@ class BaseAnnotator:
         
         if self.changes_made and not getattr(self, "_syncing_tabs", False):
             self.save_custom_data()
-        
+            self.save_global_point_annotations()
+
         pysoniq.stop()
         
         self.current_file_idx = (self.current_file_idx + 1) % len(self.audio_files)
@@ -1116,17 +1226,45 @@ class BaseAnnotator:
         self.file_total_label.config(text=f"/ {len(self.audio_files)}")
         self.file_label.config(text=self.audio_files[self.current_file_idx].name)
     
+
+
+
     # ===== SAVE/LOAD =====
     
+
+
+    # Save global/shared annotations
+    def save_global_point_annotations(self):
+        if not self.annotation_dir:
+            return
+        out = self.annotation_dir / "_global_point_annotations.json"
+        with open(out, "w") as f:
+            json.dump(BaseLayer.global_point_annotations, f, indent=2)
+
+    # Load global/shared annotations
+    def load_global_point_annotations(self):
+        if not self.annotation_dir:
+            return
+        inp = self.annotation_dir / "_global_point_annotations.json"
+        if inp.exists():
+            with open(inp, "r") as f:
+                BaseLayer.global_point_annotations = json.load(f)
+
+
+
+
     def save_custom_data(self):
         """Override this method to save algorithm-specific annotations"""
         pass
 
 
+
+
+
 def main():
-    """Entry point for base annotator"""
+    """Entry point for base layer"""
     root = tk.Tk()
-    app = BaseAnnotator(root)
+    app = BaseLayer(root)
     root.geometry("1400x800")
     root.mainloop()
 
