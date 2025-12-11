@@ -17,6 +17,6 @@ __author__ = "laelume"
 __license__ = "MIT"
 __all__ = [
     "ChangepointAnnotator", "PeakAnnotator", "HarmonicAnnotator", "SequenceAnnotator", "BaseAnnotator", 
-    "HarmonicLayer", 
+    "HarmonicLayer", "ContourExtractor", 
     "YAAATApp"
     ]
