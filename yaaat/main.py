@@ -4,23 +4,31 @@ import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
 
-try:
-    # Package mode: python -m yaaat
-    from yaaat.changepoint_annotator import ChangepointAnnotator
-    from yaaat.peak_annotator import PeakAnnotator
-    from yaaat.harmonic_annotator import HarmonicAnnotator
-    from yaaat.sequence_annotator import SequenceAnnotator
-    from yaaat.base_annotator import BaseAnnotator
-    from yaaat.harmonic_layer import HarmonicLayer
+# try:
+#     # Package mode: python -m yaaat
+#     from yaaat.tabs.changepoint_annotator import ChangepointAnnotator
+#     from yaaat.tabs.peak_annotator import PeakAnnotator
+#     from yaaat.tabs.harmonic_annotator import HarmonicAnnotator
+#     from yaaat.tabs.sequence_annotator import SequenceAnnotator
+#     from yaaat.layers.base_layer import BaseLayer
+#     from yaaat.layers.harmonic_layer import HarmonicLayer
 
-except ImportError:
-    # Script mode: python main.py
-    from changepoint_annotator import ChangepointAnnotator
-    from peak_annotator import PeakAnnotator
-    from harmonic_annotator import HarmonicAnnotator
-    from sequence_annotator import SequenceAnnotator
-    from base_annotator import BaseAnnotator
-    from harmonic_layer import HarmonicLayer
+# except ImportError:
+#     # Script mode: python main.py
+#     from .tabs.changepoint_annotator import ChangepointAnnotator
+#     from .tabs.peak_annotator import PeakAnnotator
+#     from .tabs.harmonic_annotator import HarmonicAnnotator
+#     from .tabs.sequence_annotator import SequenceAnnotator
+#     from .layers.base_layer import BaseLayer
+#     from .layers.harmonic_layer import HarmonicLayer
+
+# Script mode: python main.py
+from tabs.changepoint_annotator import ChangepointAnnotator
+from tabs.peak_annotator import PeakAnnotator
+from tabs.harmonic_annotator import HarmonicAnnotator
+from tabs.sequence_annotator import SequenceAnnotator
+from layers.base_layer import BaseLayer
+from layers.harmonic_layer import HarmonicLayer
 
 
 class YAAATApp:
@@ -51,7 +59,7 @@ class YAAATApp:
         self.notebook.add(peak_frame, text="Peak Annotator")
         self.notebook.add(harmonic_frame, text="Harmonic Annotator")
         self.notebook.add(sequence_frame, text="Sequence Annotator")
-        self.notebook.add(base_frame, text="Base Annotator")
+        self.notebook.add(base_frame, text="Base Layer")
         self.notebook.add(harmonic_layer_frame, text="Harmonic Layer")
 
         # Initialize tools (pass frames as parent)
@@ -59,7 +67,7 @@ class YAAATApp:
         self.peak_tool = PeakAnnotator(peak_frame)
         self.harmonic_tool = HarmonicAnnotator(harmonic_frame)
         self.sequence_tool = SequenceAnnotator(sequence_frame)
-        self.base_tool = BaseAnnotator(base_frame)
+        self.base_tool = BaseLayer(base_frame)
         self.harmonic_layer_tool = HarmonicLayer(harmonic_layer_frame)
         
         # Share audio files across all tabs

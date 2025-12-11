@@ -1,9 +1,9 @@
 """
-Changepoint Annotator - Built on BaseAnnotator
+Changepoint Layer - Built on BaseLayer
 Interactive tool for annotating time-frequency changepoints on spectrograms
 """
 
-from base_annotator import BaseAnnotator
+from base_layer import BaseLayer
 import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
@@ -11,7 +11,7 @@ from pathlib import Path
 import json
 
 
-class ChangepointAnnotator(BaseAnnotator):
+class ChangepointLayer(BaseLayer):
     """Changepoint annotation tool for syllable segmentation"""
     
     def __init__(self, root):
