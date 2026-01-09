@@ -1,7 +1,7 @@
 # YAAAT! Yet Another Audio Annotation Tool
 
 Interactive bioacoustic annotation tool for measuring vocalizations. 
-** (If YAAAT is useful in your work, please ⭐ the repository or open an issue with feedback !!!) **
+###### (If YAAAT is useful in your work, please ⭐ the repository or open an issue with feedback !!!)
 
 
 Features: 
