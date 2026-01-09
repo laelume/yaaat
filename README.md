@@ -7,6 +7,8 @@ Features:
 2. Peak Annotator, for marking dominant frequency peaks on the power spectrum. Useful for describing spectrally complex vocalizations. 
 3. Harmonic Annotator, for identifying harmonics. 
 
+If YAAAT is useful in your work, please ⭐ the repository or open an issue with feedback !!!
+
 <table>
   <tr>
     <td><img src="https://raw.githubusercontent.com/laelume/yaaat/main/yaaat/images/changepoint_annotator_screenshot.jpg" alt="Changepoint Annotator" width="400"/></td>
