@@ -1,0 +1,14 @@
+/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+/build/
+/dist/
+*.egg-info/
+.eggs/
+
+.DS_Store
+Thumbs.db
+
+/contours
