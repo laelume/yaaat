@@ -1,5 +1,0 @@
-include README.md
-include LICENSE
-include requirements.txt
-recursive-include yaaat/images *
-recursive-include yaaat/test_files/test_audio *.wav
