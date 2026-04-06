@@ -15,4 +15,4 @@ OMIT.txt
 cherry-commit.py
 
 /layers/contour_layer.py
-/yalers/binary_annotation_layer.py
+/layers/binary_annotation_layer.py
