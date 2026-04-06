@@ -18,4 +18,5 @@ cherry-commit.py
 /layers/binary_annotation_layer.py
 
 /contours/processing.py
+/contours/config.py
 /contours/algorithms.py
