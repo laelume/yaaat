@@ -9,10 +9,13 @@ from .tabs.harmonic_annotator import HarmonicAnnotator
 from .tabs.sequence_annotator import SequenceAnnotator
 
 from .layers.base_layer import BaseLayer
-from .layers.harmonic_layer import HarmonicLayer
-from .layers.binary_annotation_layer import BinaryAnnotationLayer
 from .layers.changepoint_layer import ChangepointLayer
-from .layers.contour_layer import ContourLayer
+from .layers.harmonic_layer import HarmonicLayer
+
+# Omitted until ready to ship (see dev-local)
+# from .layers.contour_layer import ContourLayer
+# from .layers.binary_annotation_layer import BinaryAnnotationLayer
+
 
 from .algs.peak_ratio_harmonics import analyze_harmonics, find_spectral_peaks
 
