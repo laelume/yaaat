@@ -3,3 +3,4 @@ matplotlib
 scipy
 natsort
 pysoniq
+scikit-image
