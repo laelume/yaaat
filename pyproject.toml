@@ -45,7 +45,9 @@ dependencies = [
     "matplotlib",
     "scipy",
     "natsort",
-    "pysoniq"
+    "pysoniq", 
+    "scikit-image",
+    
 ]
 
 [project.urls]

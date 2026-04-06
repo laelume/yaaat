@@ -31,7 +31,7 @@ pip install yaaat
 ```bash
 git clone https://github.com/laelume/yaaat.git
 cd yaaat
-pip install -e .
+pip install -e . | yaaat `OR` pip install -r requirements.txt | python -m yaaat
 ```
 
 ## Usage
