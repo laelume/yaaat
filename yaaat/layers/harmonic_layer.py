@@ -12,14 +12,23 @@ from tkinter import ttk, messagebox
 from pathlib import Path
 import json
 
-from layers.base_layer import BaseLayer
+# from layers.base_layer import BaseLayer
+from .base_layer import BaseLayer
 
-# try:
-#     from yaaat import utils
-# except ImportError:
-#     import utils
+try:
+    from yaaat import audio_utils
+except ImportError:
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import audio_utils
 
-from utils import utils 
+from ..algs.peak_ratio_harmonics import (
+    analyze_harmonics,
+    cartesian_to_logpolar_spectrogram,
+    analyze_angular_symmetry,
+    compute_radial_flow,
+    compute_harmonic_ratio_matrix
+)
 
 class HarmonicLayer(BaseLayer):
     """Simplified harmonic annotator focusing on F0 and harmonic lines"""
@@ -56,6 +65,9 @@ class HarmonicLayer(BaseLayer):
         self.valley_ridges = {}    # {valley_name: [(time, freq), ...]}
         self.ridge_method = tk.StringVar(value='max')  # 'max', 'peaks', 'centroid'
         
+        # Peak ratio analysis results
+        self.peak_ratio_result = None
+        self.polar_analysis_data = None
 
         # Call parent init (calls setup_ui -> setup_custom_controls)
         super().__init__(root)
@@ -135,6 +147,7 @@ class HarmonicLayer(BaseLayer):
         # Ridge detection method
         ttk.Label(self.control_panel, text="Ridge Detection Method:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
 
+
         ridge_method_frame = ttk.Frame(self.control_panel)
         ridge_method_frame.pack(fill=tk.X, pady=2)
 
@@ -144,6 +157,14 @@ class HarmonicLayer(BaseLayer):
                         value='peaks', command=self.on_ridge_method_change).pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(ridge_method_frame, text="Centroid", variable=self.ridge_method, 
                         value='centroid', command=self.on_ridge_method_change).pack(side=tk.LEFT, padx=5)
+
+
+        ridge_method_frame2 = ttk.Frame(self.control_panel)
+        ridge_method_frame2.pack(fill=tk.X, pady=2)
+
+        ttk.Radiobutton(ridge_method_frame2, text="Peak Ratio", variable=self.ridge_method,
+                        value='peak_ratio', command=self.on_ridge_method_change).pack(side=tk.LEFT, padx=5)
+
 
         # Tolerance slider (only active for peaks method)
         tol_frame = ttk.Frame(self.control_panel)
@@ -268,7 +289,10 @@ class HarmonicLayer(BaseLayer):
             self.harmonic_ridges = self.detect_ridges_centroid()
         elif method == 'parabolic':
             self.harmonic_ridges = self.detect_ridges_parabolic()
-        
+        elif method == 'peak_ratio':
+            self.harmonic_ridges = self.detect_ridges_peak_ratio()
+
+
         # Recompute contours when ridges change
         if self.show_contour.get():
             self.compute_contours()
@@ -423,6 +447,59 @@ class HarmonicLayer(BaseLayer):
         return ridges
 
 
+    def detect_ridges_peak_ratio(self):
+        """Use peak ratio harmonic analysis for ridge detection"""
+        if self.detected_f0 is None:
+            return {}
+        
+        # Run peak ratio analysis on current spectrogram
+        self.peak_ratio_result = analyze_harmonics(
+            self.S_db, self.freqs,
+            f_min=self.freq_min.get(),
+            f_max=self.freq_max.get(),
+            prominence_base=self.prominence.get(),
+            prominence_scale='log',
+            max_harmonic=50,
+            tolerance=0.05
+        )
+        
+        # Store additional analysis data
+        self.polar_analysis_data = {
+            'peak_freqs': self.peak_ratio_result['peak_freqs'].tolist(),
+            'peak_amps': self.peak_ratio_result['peak_amps'].tolist(),
+            'relationships': self.peak_ratio_result['relationships'],
+            'ratio_matrix': compute_harmonic_ratio_matrix(self.peak_ratio_result['peak_freqs']).tolist()
+        }
+        
+        ridges = {}
+        
+        # For each active harmonic line, find matching detected peak
+        for h in self.harmonic_lines:
+            harm_num = h['num']
+            expected_freq = h['freq']
+            
+            # Find closest detected peak to this harmonic
+            if len(self.peak_ratio_result['peak_freqs']) > 0:
+                peak_freqs = self.peak_ratio_result['peak_freqs']
+                closest_idx = np.argmin(np.abs(peak_freqs - expected_freq))
+                matched_freq = peak_freqs[closest_idx]
+                
+                # Only match if within 10% tolerance
+                if np.abs(matched_freq - expected_freq) / expected_freq < 0.1:
+                    # Create ridge at detected peak frequency (horizontal line)
+                    ridge = [(t, matched_freq) for t in self.times]
+                    ridges[harm_num] = ridge
+        
+        print(f"  Peak ratio: {len(self.peak_ratio_result['peak_freqs'])} peaks, "
+            f"{len(self.peak_ratio_result['relationships'])} relationships")
+        
+        return ridges
+
+
+
+
+
+
 
 
 
@@ -564,6 +641,10 @@ class HarmonicLayer(BaseLayer):
                 self.compute_contours()
             self.update_display()
 
+        # Print peak ratio analysis info if using that method
+        if method == 'peak_ratio' and self.peak_ratio_result:
+            print(f"  Peak ratio found {len(self.peak_ratio_result['peak_freqs'])} peaks")
+            print(f"  {len(self.peak_ratio_result['relationships'])} harmonic relationships")
 
 
 
@@ -946,6 +1027,7 @@ class HarmonicLayer(BaseLayer):
                 'freq_range': [self.freq_min.get(), self.freq_max.get()],
                 'ridge_method': self.ridge_method.get(),
                 'peak_tolerance': self.peak_tolerance.get(),
+                'peak_ratio_analysis': self.polar_analysis_data if self.ridge_method.get() == 'peak_ratio' and self.polar_analysis_data else None,
                 'show_ridges': bool(self.show_ridges.get()),
                 'show_valleys': bool(self.show_valleys.get()),
                 'show_contour': bool(self.show_contour.get()),

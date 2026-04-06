@@ -23,14 +23,21 @@ from scipy.ndimage import minimum_filter1d
 
 import pysoniq
 
-# try: 
-#     from yaaat import utils
-# except ImportError:
-#     print("/utils subdir does not exist")
-#     import utils
+try:
+    from yaaat import audio_utils
+except ImportError:
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import audio_utils
 
-from utils import utils
-from algs.fuzzy_valley import FuzzyValley
+# from algs.fuzzy_valley import FuzzyValley
+
+try:
+    from yaaat.algs.fuzzy_valley import FuzzyValley
+except ImportError:
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from algs.fuzzy_valley import FuzzyValley
 
 
 
@@ -450,7 +457,7 @@ class HarmonicAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} files")
-        utils.save_last_directory(self.base_audio_dir)
+        audio_utils.save_last_directory(self.base_audio_dir)
     
     def load_test_audio(self):
         """Load bundled test audio files"""
@@ -477,11 +484,11 @@ class HarmonicAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} test files")
-        utils.save_last_directory(self.base_audio_dir)
+        audio_utils.save_last_directory(self.base_audio_dir)
     
     def auto_load_directory(self):
         """Auto-load last directory on startup"""
-        last_dir = utils.load_last_directory()
+        last_dir = audio_utils.load_last_directory()
         if last_dir and last_dir.exists():
             print(f"Auto-loading: {last_dir}")
             self.audio_files = natsorted(last_dir.rglob('*.wav'))
@@ -1669,8 +1676,8 @@ class HarmonicAnnotator:
     
     def update_correction_info(self):
         """Update correction count"""
-        val = self.harmonic_corrections()
-        print(f"dEbuG update_correction_info called: val={val}, type={type(val)}")
+        # val = self.harmonic_corrections()
+        # print(f"dEbuG update_correction_info called: val={val}, type={type(val)}")
         self.correction_info.config(text=f"Corrections: {len(val)}")
     
 

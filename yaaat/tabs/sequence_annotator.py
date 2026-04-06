@@ -9,13 +9,12 @@ import json
 from natsort import natsorted
 import pysoniq
 
-# try: 
-#     from yaaat import utils
-# except ImportError:
-#     print("/utils subdir does not exist")
-#     import utils
-
-from utils import utils 
+try:
+    from yaaat import audio_utils as audio_utils
+except ImportError:
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import audio_utils as audio_utils
 
 class SequenceAnnotator:
     """Interactive tool for annotating audio sequences with start/stop times."""
@@ -390,7 +389,7 @@ class SequenceAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} files")
-        utils.save_last_directory(self.base_audio_dir)
+        audio_utils.save_last_directory(self.base_audio_dir)
 
     def load_test_audio(self):
         """Load bundled test audio files"""
@@ -419,11 +418,11 @@ class SequenceAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} test files")
-        utils.save_last_directory(self.base_audio_dir)
+        audio_utils.save_last_directory(self.base_audio_dir)
 
     def auto_load_directory(self):
         """Auto-load last directory or default test audio on startup"""
-        last_dir = utils.load_last_directory()
+        last_dir = audio_utils.load_last_directory()
         if last_dir and last_dir.exists():
             print(f"Auto-loading last directory: {last_dir}")
             self.audio_files = natsorted(last_dir.rglob('*.wav'))
@@ -449,7 +448,7 @@ class SequenceAnnotator:
         print(f"Loading {audio_file.name}...")
         
         # Load audio using pysoniq
-        self.y, self.sr = pysoniq.load(str(audio_file))
+        self.y, self.sr = pysoniq.load_audio(str(audio_file))
         if self.y.ndim > 1:
             self.y = np.mean(self.y, axis=1)
         
@@ -571,7 +570,7 @@ class SequenceAnnotator:
         if self.y is None:
             return
         
-        self.S_db, self.freqs, self.times = utils.compute_spectrogram_unified(
+        self.S_db, self.freqs, self.times = audio_utils.compute_spectrogram_unified(
             self.y,
             self.sr,
             nfft=self.n_fft.get(),

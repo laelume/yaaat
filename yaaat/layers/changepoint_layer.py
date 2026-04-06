@@ -1,9 +1,7 @@
-"""
-Changepoint Layer - Built on BaseLayer
-Interactive tool for annotating time-frequency changepoints on spectrograms
-"""
+"""Changepoint Layer - Built on BaseLayer. 
+Interactive tool for annotating time-frequency changepoints on spectrograms"""
 
-from base_layer import BaseLayer
+from .base_layer import BaseLayer
 import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
@@ -77,6 +75,7 @@ class ChangepointLayer(BaseLayer):
         
         ttk.Separator(self.control_panel, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
         
+
         # Annotation mode
         ttk.Label(self.control_panel, text="Mode:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
         
@@ -87,7 +86,7 @@ class ChangepointLayer(BaseLayer):
                         value='contour', command=self.switch_mode).pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(mode_frame, text="Sequence", variable=self.annotation_mode,
                         value='sequence', command=self.switch_mode).pack(side=tk.LEFT, padx=5)
-        
+        # Mode instructions
         self.mode_instructions = ttk.Label(self.control_panel, 
             text="Contour: Click points → Finish Contour",
             wraplength=400, font=('', 8, 'italic'), foreground='blue')
@@ -121,12 +120,15 @@ class ChangepointLayer(BaseLayer):
         
         ttk.Separator(self.control_panel, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
         
-        # Actions
+        # Actions heading
         ttk.Label(self.control_panel, text="Contour Actions:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
-        
+
+        # Action buttons
+        # Create a frame for the button grid
         button_grid = ttk.Frame(self.control_panel)
         button_grid.pack(pady=2)
         
+        # Define buttons
         buttons = [
             ("Finish Contour", self.finish_contour),
             ("Clear Last", self.clear_last),

@@ -40,7 +40,13 @@ pip install -e .
 ```bash
 yaaat
 ```
-Opens a tabbed interface with various annotators. Includes test audio files to get started. For some reason, auto-load is a little buggy, so clicking **Load Audio Files** and selecting the included test_audio yourself lets the interface work as-intended. 
+
+### Or navigate to the correct directory and execute via: 
+```bash
+cd yaaat | python -m yaaat
+```
+
+Opens a tabbed interface with various annotators. Includes test audio files to get started. Sometimes auto-load is a little buggy, so clicking **Load Audio Files** and selecting the included test_audio, or your own audio files, lets the interface work as-intended. 
 
 ### Use Individual Annotators
 ```bash
@@ -93,8 +99,6 @@ root.mainloop()
 - Table updates immediately after modifications
 - Better error handling and user feedback
 
-
-
 ## Requirements
 
 - Python ≥3.8 (built using 3.11)
@@ -106,8 +110,8 @@ root.mainloop()
 
 ## License
 
-MIT License - Copyright (c) 2025 laelume
+MIT License - Copyright (c) 2025-2026 laelume
 
 ## Contributing
 
-Contributions welcome! Please open an issue or submit a pull request. I'm especially interested in talking to people about using this in their existing AI workflows, so please feel free to reach out !!
+Contributions welcome! Please open an issue or submit a pull request. 
