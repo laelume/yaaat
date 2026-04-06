@@ -1,0 +1,20 @@
+# Files to omit from dev-public until they're finished and tested for deployment
+
+/algs/delay_embeddings.py
+/algs/harmonic_stacker.py
+/algs/inst_freq.py
+
+/arches/harmonic_learner.py
+/arches/changepoint_learner.py
+
+/contours/algorithms.py
+/contours/config.py
+/contours/experiments.py
+/contours/optimize.py
+/contours/plotting.py
+/contours/processing.py
+
+/denoise/directed_rolling_ball.py
+
+/layers/cluster_spectrog.py
+/layers/contour_layer.py
