@@ -41,6 +41,12 @@ from yaaat.core import annotation_io
 from yaaat.core import visualization
 from yaaat.core import interaction
 
+# (つ -' _ '- )つ    (つ -' _ '- )つ
+# CONFIG import — all tunable defaults live in config.py.
+# BaseLayer reads from CONFIG so changing config.py affects all tabs.
+# (つ -' _ '- )つ    (つ -' _ '- )つ
+from yaaat.config import CONFIG
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,26 +95,28 @@ class BaseLayer:
 
         ##    <(''<)  <( ' ' )>  (>'')>
         # SPECTROGRAM PARAMETERS
-        # Stored as tk vars so UI controls bind directly
+        # All defaults sourced from CONFIG — change config.py to affect
+        # all tabs without touching BaseLayer source.
         ##    <(''<)  <( ' ' )>  (>'')>
 
-        self.n_fft = tk.IntVar(value=256)
-        self.hop_length = tk.IntVar(value=64)
-        self.fmin_calc = tk.IntVar(value=500)
-        self.fmax_calc = tk.IntVar(value=16000)
+        self.n_fft      = tk.IntVar(value=CONFIG["n_fft"])
+        self.hop_length = tk.IntVar(value=CONFIG["hop_length"])
+        self.fmin_calc  = tk.IntVar(value=CONFIG["fmin_calc"])
+        self.fmax_calc  = tk.IntVar(value=CONFIG["fmax_calc"])
 
         # 'linear' or 'mel' — controls compute_spectrogram_unified() scale param
-        self.y_scale = tk.StringVar(value='linear')
+        self.y_scale    = tk.StringVar(value=CONFIG["y_scale"])
 
         # Display frequency limits (may differ from computation limits)
-        self.fmin_display = tk.IntVar(value=500)
-        self.fmax_display = tk.IntVar(value=8000)
+        self.fmin_display = tk.IntVar(value=CONFIG["fmin_display"])
+        self.fmax_display = tk.IntVar(value=CONFIG["fmax_display"])
+
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # PLAYBACK STATE
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        self.playback_gain = tk.DoubleVar(value=1.0)
+        self.playback_gain = tk.DoubleVar(value=CONFIG["playback_gain"])
         self.loop_enabled = False
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
@@ -144,7 +152,7 @@ class BaseLayer:
 
         # Waveform overlay controls
         self.show_waveform = tk.BooleanVar(value=False)
-        self.waveform_alpha = tk.DoubleVar(value=0.2)
+        self.waveform_alpha = tk.DoubleVar(value=CONFIG["waveform_alpha"])
 
         # Twin y-axis for waveform overlay — None when not active
         self.waveform_ax = None
