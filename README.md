@@ -90,4 +90,4 @@ annotate selected files True/False. Export to CSV.
 
 ## License
 
-MIT
+MIT License - Copyright (c) 2025-2026 laelume
