@@ -17,6 +17,7 @@ Functions operate on:
 import logging
 import traceback
 from pathlib import Path
+import json
 
 import numpy as np
 import pysoniq
@@ -43,7 +44,7 @@ def load_directory(layer):
     """Open a directory dialog, load .wav files, and prompt for annotation save location.
 
     Populates layer.audio_files, layer.base_audio_dir, layer.annotation_dir.
-    Persists the chosen directory via audio_utils.save_last_directory().
+    Persists the chosen directory via save_last_directory().
     Falls back to default annotation path if user cancels the save location dialog.
     """
     directory = filedialog.askdirectory(title="Select Audio Directory")
@@ -96,12 +97,12 @@ def load_directory(layer):
     annotation_io.load_global_point_annotations_into(layer)
 
     layer.current_file_idx = 0
-    load_current_file(layer)
+    layer.load_current_file()
 
     logger.info("Loaded %d files from %s", len(layer.audio_files), directory)
     logger.info("Annotations will be saved to: %s", layer.annotation_dir)
 
-    audio_utils.save_last_directory(layer.base_audio_dir)
+    save_last_directory(layer.base_audio_dir)
 
 
 def load_test_audio(layer):
@@ -132,10 +133,10 @@ def load_test_audio(layer):
     annotation_io.load_global_point_annotations_into(layer)
 
     layer.current_file_idx = 0
-    load_current_file(layer)
+    layer.load_current_file()
 
     logger.info("Loaded %d test files", len(layer.audio_files))
-    audio_utils.save_last_directory(layer.base_audio_dir)
+    save_last_directory(layer.base_audio_dir)
 
 
 def auto_load_directory(layer):
@@ -143,7 +144,7 @@ def auto_load_directory(layer):
 
     Called via root.after() so the UI is fully rendered before disk access.
     """
-    last_dir = audio_utils.load_last_directory()
+    last_dir = load_last_directory()
 
     if last_dir and last_dir.exists():
         logger.info("Auto-loading: %s", last_dir)
@@ -159,7 +160,7 @@ def auto_load_directory(layer):
             annotation_io.load_global_point_annotations_into(layer)
 
             layer.current_file_idx = 0
-            load_current_file(layer)
+            layer.load_current_file()
             return
 
     # No last directory or no files found — fall back to test audio
@@ -238,7 +239,7 @@ def next_file(layer):
     pysoniq.stop()
 
     layer.current_file_idx = (layer.current_file_idx + 1) % len(layer.audio_files)
-    load_current_file(layer)
+    layer.load_current_file()
 
     if was_playing:
         layer.play_audio()
@@ -263,7 +264,7 @@ def previous_file(layer):
     pysoniq.stop()
 
     layer.current_file_idx = (layer.current_file_idx - 1) % len(layer.audio_files)
-    load_current_file(layer)
+    layer.load_current_file()
 
     if was_playing:
         layer.play_audio()
@@ -283,7 +284,7 @@ def jump_to_file(layer):
                 layer.save_custom_data()
 
             layer.current_file_idx = file_num - 1
-            load_current_file(layer)
+            layer.load_current_file()
 
         else:
             messagebox.showwarning(
@@ -363,6 +364,50 @@ def _default_annotation_dir(dataset_name):
     return Path.home() / "yaaat_annotations" / dataset_name
 
 
+
+##    <(''<)  <( ' ' )>  (>'')>
+# DIRECTORY PERSISTENCE
+# Save and load the last-used audio directory path.
+# Stored under 'last_directory' key in ~/.yaaat_config.json.
+# Called after any successful directory load so the next startup
+# auto-loads the same dataset without a dialog.
+##    <(''<)  <( ' ' )>  (>'')>
+
+def save_last_directory(directory):
+    """Save last opened directory to ~/.yaaat_config.json."""
+    config_file = Path.home() / '.yaaat_config.json'
+    try:
+        config = {}
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        config['last_directory'] = str(directory)
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        logger.error("Could not save last directory: %s", e)
+
+
+def load_last_directory():
+    """Load last opened directory from ~/.yaaat_config.json.
+
+    Returns:
+        Path if valid directory exists, None otherwise
+    """
+    config_file = Path.home() / '.yaaat_config.json'
+    try:
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            last_dir = config.get('last_directory', '')
+            if last_dir:
+                last_dir = Path(last_dir)
+                if last_dir.exists() and last_dir.is_dir():
+                    return last_dir
+    except Exception as e:
+        logger.error("Could not load last directory: %s", e)
+    return None
+
 ##    <(''<)  <( ' ' )>  (>'')>
 # MANIFEST PERSISTENCE
 # Save and load the last-used inference review manifest path.
@@ -432,9 +477,9 @@ def load_last_manifest():
 
 # U S A G I
 
-# from yaaat.core.file_nav import load_directory, load_current_file, next_file
+# from yaaat.core.file_nav import load_directory, layer.load_current_file, next_file
 # load_directory(layer)
-# load_current_file(layer)
+# layer.load_current_file()
 # next_file(layer)
 
 # from yaaat.core.file_nav import save_last_manifest, load_last_manifest

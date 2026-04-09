@@ -884,14 +884,16 @@ class BinaryAnnotator(GridLayer):
         # update_progress() updates nav entry and total label correctly.
         # file_label is overridden immediately after to show a grid-appropriate
         # dataset summary instead of a single filename.
-        # (つ -' _ '- )つ    (つ -' _ '- )つ        
-        self.update_progress()
-
-        self.file_label.config(
-            text=f"{len(self.audio_files)} files | "
-                f"Page {self.current_page + 1} / "
-                f"{max(1, -(-len(self.audio_files) // self.grid_size))}"
-        )
+        # Guard against update_progress being called before widgets exist.
+        # Grid view initializes later than single-file tabs due to setup_grid_view().
+        # (つ -' _ '- )つ    (つ -' _ '- )つ
+        if hasattr(self, 'file_number_entry') and self.file_number_entry.winfo_exists():
+            self.update_progress()
+            self.file_label.config(
+                text=f"{len(self.audio_files)} files | "
+                    f"Page {self.current_page + 1} / "
+                    f"{max(1, -(-len(self.audio_files) // self.grid_size))}"
+            )
 
 ##    <(''<)  <( ' ' )>  (>'')>
 

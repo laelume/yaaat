@@ -1,0 +1,7 @@
+numpy
+matplotlib
+scipy
+natsort
+pysoniq
+pandas
+# scikit-image

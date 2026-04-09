@@ -296,6 +296,8 @@ class GridLayer(BaseLayer):
         Calls draw_grid_overlays() for each cell after rendering.
         Binds on_grid_click() to each cell axis.
         """
+        print(f"DEBUG update_grid_display: audio_files={len(self.audio_files)}, grid_fig={self.grid_fig}")
+
         if not self.audio_files or self.grid_fig is None:
             return
 
@@ -327,8 +329,9 @@ class GridLayer(BaseLayer):
                 ax = self.grid_fig.add_subplot(rows, cols, cell_pos + 1)
                 self.grid_axes.append(ax)
 
-                if file_idx in self.grid_spectrograms:
-                    spec = self.grid_spectrograms[file_idx]
+                filepath_key = str(self.audio_files[file_idx])
+                if filepath_key in self.grid_spectrograms:
+                    spec = self.grid_spectrograms[filepath_key]
 
                     # Square cells — extent normalised to [0,1] for uniform display
                     extent = [0, 1, 0, 1]
