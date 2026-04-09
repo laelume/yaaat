@@ -200,6 +200,42 @@ class GridLayer(BaseLayer):
         # Subclass-specific grid controls
         self.setup_grid_controls()
 
+
+    ##    <(''<)  <( ' ' )>  (>'')>
+    # UI COMPOSITION OVERRIDE
+    # Replaces BaseLayer's single-file spectrogram panel with the grid canvas.
+    ##    <(''<)  <( ' ' )>  (>'')>
+
+    def setup_ui(self):
+        """Override BaseLayer.setup_ui() to replace the spectrogram panel with the grid canvas.
+
+        Calls super().setup_ui() to build the control panel and plot_frame.
+        Then destroys all children of self.plot_frame and calls setup_grid_view()
+        to inject the grid canvas in their place.
+
+        BaseLayer's matplotlib figure (self.fig, self.ax, self.canvas) is still
+        created by super().setup_ui() but is never packed into the display —
+        it is replaced by self.grid_fig and self.grid_canvas from setup_grid_view().
+        self.ax and self.canvas remain available for compatibility with any
+        BaseLayer methods that reference them, but are not visible.
+        """
+        super().setup_ui()
+
+        # (つ -' _ '- )つ    (つ -' _ '- )つ
+        # Remove all widgets BaseLayer packed into self.plot_frame.
+        # This includes the nav bar, matplotlib canvas, bottom nav, and zoom label.
+        # self.fig, self.ax, self.canvas remain as attributes for compatibility
+        # but are detached from the display.
+        # (つ -' _ '- )つ    (つ -' _ '- )つ
+        for widget in self.plot_frame.winfo_children():
+            widget.destroy()
+
+        # Inject grid canvas into the now-empty plot_frame
+        self.setup_grid_view(self.plot_frame)
+
+
+
+
     ##    <(''<)  <( ' ' )>  (>'')>
     # GRID CANVAS SETUP
     # Called after audio is loaded — builds the grid figure in the plot panel

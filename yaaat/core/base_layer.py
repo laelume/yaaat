@@ -376,11 +376,11 @@ class BaseLayer:
         # RIGHT SPECTROGRAM PANEL
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        plot_frame = ttk.Frame(main_frame)
-        plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.plot_frame = ttk.Frame(main_frame)
+        self.plot_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Top navigation bar
-        nav_frame = ttk.Frame(plot_frame)
+        nav_frame = ttk.Frame(self.plot_frame)
         nav_frame.pack(fill=tk.X, pady=(0, 5))
 
         ttk.Button(nav_frame, text="◄ Previous", command=self.previous_file).pack(side=tk.LEFT, padx=5)
@@ -405,11 +405,11 @@ class BaseLayer:
         self.fig = Figure(figsize=(10, 6))
         self.fig.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.08)
         self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         # Bottom navigation bar with hold-to-repeat buttons
-        nav_bottom_frame = ttk.Frame(plot_frame)
+        nav_bottom_frame = ttk.Frame(self.plot_frame)
         nav_bottom_frame.pack(fill=tk.X)
 
         button_center_frame = ttk.Frame(nav_bottom_frame)
@@ -426,7 +426,7 @@ class BaseLayer:
         next_btn.bind('<ButtonRelease-1>', lambda e: self.stop_continuous_nav())
 
         # Zoom region info display (updated during drag)
-        self.zoom_info_label = ttk.Label(plot_frame, text="", font=('', 8), foreground='blue')
+        self.zoom_info_label = ttk.Label(self.plot_frame, text="", font=('', 8), foreground='blue')
         self.zoom_info_label.pack(pady=(2, 0))
 
         # Canvas event bindings — delegate to interaction module
