@@ -68,6 +68,7 @@ from yaaat.core.annotation_io import (
 
 logger = logging.getLogger(__name__)
 
+from yaaat.config import CONFIG
 
 ##    <(''<)  <( ' ' )>  (>'')>
 
@@ -87,10 +88,10 @@ class PeakAnnotator(BaseLayer):
         # so they exist when setup_ui() calls setup_custom_controls().
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        self.n_fft_spect = tk.IntVar(value=512)
-        self.hop_spect   = tk.IntVar(value=32)
-        self.n_fft_psd   = tk.IntVar(value=1024)
-        self.hop_psd     = tk.IntVar(value=512)
+        self.n_fft_spect = tk.IntVar(value=CONFIG["n_fft_spect"])
+        self.hop_spect   = tk.IntVar(value=CONFIG["hop_spect"])
+        self.n_fft_psd   = tk.IntVar(value=CONFIG["n_fft_psd"])
+        self.hop_psd     = tk.IntVar(value=CONFIG["hop_psd"])
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # PSD DATA
@@ -118,8 +119,9 @@ class PeakAnnotator(BaseLayer):
         # DETECTION PARAMETERS
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        self.peak_prominence         = tk.DoubleVar(value=0.1)
-        self.peak_click_threshold_hz = tk.DoubleVar(value=100.0)
+        self.peak_prominence         = tk.DoubleVar(value=CONFIG["peak_prominence"])
+        self.peak_click_threshold_hz = tk.DoubleVar(value=CONFIG["peak_click_threshold_hz"])
+
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # DISPLAY OPTIONS

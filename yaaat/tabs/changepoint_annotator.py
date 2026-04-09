@@ -73,6 +73,8 @@ from yaaat.core.annotation_io import (
 
 logger = logging.getLogger(__name__)
 
+from yaaat.config import CONFIG
+
 
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 # ANNOTATION LABEL COLORS
@@ -660,7 +662,11 @@ class ChangepointAnnotator(BaseLayer):
     def _handle_ctrl_click(self, x, y):
         """Handle Ctrl+Click for dual-endpoint contour extraction."""
         if self.pending_onset_idx is None:
-            info = self._find_point_info(x, y, 0.05, 200)
+            info = self._find_point_info(
+                x, y,
+                CONFIG["changepoint_ctrl_time_thresh_s"],
+                CONFIG["changepoint_ctrl_freq_thresh_hz"]
+            )
             if info is None:
                 return
             self.pending_onset_idx = info
@@ -922,8 +928,8 @@ class ChangepointAnnotator(BaseLayer):
 
         Returns True if a point was removed.
         """
-        time_thresh = 0.05
-        freq_thresh = 100.0
+        time_thresh = CONFIG["changepoint_time_thresh_s"]
+        freq_thresh = CONFIG["changepoint_freq_thresh_hz"]
         min_dist    = float('inf')
         closest     = None
         source      = None

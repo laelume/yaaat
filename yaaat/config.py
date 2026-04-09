@@ -112,6 +112,12 @@ CONFIG = {
     # Click-to-remove threshold in Hz
     "changepoint_freq_thresh_hz": 100.0,
 
+    # Ctrl+Click endpoint marking — time and frequency search thresholds.
+    # Wider than normal click thresholds to account for imprecise Ctrl+Click
+    # targeting near existing points when marking onset/offset pairs.
+    "changepoint_ctrl_time_thresh_s":  0.05,   # 50ms — wider than normal 20ms click thresh
+    "changepoint_ctrl_freq_thresh_hz": 200.0,  # 200Hz — wider than normal 100Hz click thresh
+
     ##    <(''<)  <( '' )>  (>'')>
     # PEAK ANNOTATOR DEFAULTS
     ##    <(''<)  <( ' ' )>  (>'')>

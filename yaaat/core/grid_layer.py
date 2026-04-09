@@ -41,12 +41,14 @@ from yaaat.core import audio_utils
 
 logger = logging.getLogger(__name__)
 
+from yaaat.config import CONFIG
+
 
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 # GRID DEFAULTS
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-_DEFAULT_GRID_SIZE = 25     # files per page
+_DEFAULT_GRID_SIZE = CONFIG["grid_size"]    # files per page
 _GRID_SIZE_OPTIONS = [4, 9, 16, 25, 36]
 _GRID_REFRESH_DELAY_MS = 50  # ms delay before redraw after grid size change
 
@@ -75,7 +77,7 @@ class GridLayer(BaseLayer):
         self.current_page = 0
 
         # Number of files displayed per page
-        self.grid_size = _DEFAULT_GRID_SIZE
+        self.grid_size = CONFIG["grid_size"]
 
         # Grid figure and canvas — separate from BaseLayer's single-file canvas
         self.grid_fig = None

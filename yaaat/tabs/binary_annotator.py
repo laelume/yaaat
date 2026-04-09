@@ -73,6 +73,8 @@ from yaaat.core.annotation_io import (
 
 logger = logging.getLogger(__name__)
 
+from yaaat.config import CONFIG
+
 
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 # COLUMN SCHEMA FILE
@@ -87,7 +89,7 @@ _BINARY_COLUMNS_FILENAME = "_binary_columns.json"
 # 800 Hz cutoff, 5th order Butterworth.
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-_HIGHPASS_CUTOFF_HZ = 800
+_HIGHPASS_CUTOFF_HZ = CONFIG["grid_highpass_hz"]
 _HIGHPASS_ORDER     = 5
 
 # (つ -' _ '- )つ    (つ -' _ '- )つ
@@ -96,7 +98,7 @@ _HIGHPASS_ORDER     = 5
 # Per-file standardization: (S - mean) / std, clipped to [-3, 3], rescaled to [0, 1].
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-_GRID_N_MELS         = 64
+_GRID_N_MELS          = CONFIG["grid_n_mels"]
 _GRID_STANDARDIZE_STD = 3.0
 
 
@@ -862,7 +864,11 @@ class BinaryAnnotator(GridLayer):
     ##    <(''<)  <( ' ' )>  (>'')>
 
     def load_current_file(self):
-        """Override to trigger grid page load instead of single file load."""
+        """Override to trigger grid page load instead of single file load.
+            Updates progress display to show total file count rather than
+            a single filename — meaningful for grid view where no single
+            file is 'current' in the BaseLayer sense.
+        """
         if not self.audio_files:
             return
 
@@ -873,8 +879,19 @@ class BinaryAnnotator(GridLayer):
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         self.process_audio()
         self.update_grid_display()
+
+        # (つ -' _ '- )つ    (つ -' _ '- )つ
+        # update_progress() updates nav entry and total label correctly.
+        # file_label is overridden immediately after to show a grid-appropriate
+        # dataset summary instead of a single filename.
+        # (つ -' _ '- )つ    (つ -' _ '- )つ        
         self.update_progress()
 
+        self.file_label.config(
+            text=f"{len(self.audio_files)} files | "
+                f"Page {self.current_page + 1} / "
+                f"{max(1, -(-len(self.audio_files) // self.grid_size))}"
+        )
 
 ##    <(''<)  <( ' ' )>  (>'')>
 

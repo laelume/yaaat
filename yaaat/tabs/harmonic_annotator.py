@@ -69,6 +69,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+from yaaat.config import CONFIG
+
 
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 # HARMONIC COLOR PALETTE
@@ -136,11 +138,11 @@ class HarmonicAnnotator(BaseLayer):
         # DETECTION PARAMETERS — tk vars bound to UI controls
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        self.prominence         = tk.DoubleVar(value=5.0)
-        self.freq_min           = tk.IntVar(value=500)
-        self.freq_max           = tk.IntVar(value=8000)
-        self.peak_tolerance     = tk.DoubleVar(value=0.1)
-        self.ridge_method       = tk.StringVar(value='max')
+        self.prominence         = tk.DoubleVar(value=CONFIG["harmonic_prominence"])
+        self.freq_min           = tk.IntVar(value=CONFIG["harmonic_freq_min"])
+        self.freq_max           = tk.IntVar(value=CONFIG["harmonic_freq_max"])
+        self.peak_tolerance     = tk.DoubleVar(value=CONFIG["harmonic_peak_tolerance"])
+        self.ridge_method       = tk.StringVar(value=CONFIG["harmonic_ridge_method"])
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # VALLEY METHOD
@@ -150,15 +152,17 @@ class HarmonicAnnotator(BaseLayer):
         # as a second option in a future comparative pass.
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        self.valley_method      = tk.StringVar(value='min_energy')
+        self.valley_method      = tk.StringVar(value=CONFIG["harmonic_valley_method"])
+
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # CONTOUR EXTRACTION PARAMETERS
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
         self.show_contour           = tk.BooleanVar(value=False)
-        self.contour_method         = tk.StringVar(value='raw')
-        self.contour_smoothness     = tk.DoubleVar(value=5.0)
+        self.contour_method     = tk.StringVar(value=CONFIG["harmonic_contour_method"])
+        self.contour_smoothness = tk.DoubleVar(value=CONFIG["harmonic_contour_smoothness"])
+
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # DISPLAY OPTIONS
