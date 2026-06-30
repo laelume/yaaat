@@ -6,7 +6,7 @@ Features:
 1. Changepoint Annotator, for marking temporal onset, offset, and changepoints in vocalizations. Useful for describing rapid fluctuations and identifying nonlinear phenomena. 
 2. Peak Annotator, for marking dominant frequency peaks on the power spectrum. Useful for describing spectrally complex vocalizations. 
 3. Harmonic Annotator, for identifying harmonics. 
-
+4. Batch Annotator, for multi-file review and defining binary and multi-label annotation schema
 <table>
   <tr>
     <td><img src="https://raw.githubusercontent.com/laelume/yaaat/main/yaaat/images/changepoint_annotator_screenshot.jpg" alt="Changepoint Annotator" width="400"/></td>
@@ -17,6 +17,7 @@ Features:
     <td align="center">Changepoint Annotator</td>
     <td align="center">Peak Annotator</td>
     <td align="center">Harmonic Annotator</td>
+    <td align="center">Batch Annotator</td>
   </tr>
 </table>
 
@@ -46,13 +47,18 @@ pip install yaaat[ai]
 
 ## Usage
 
-Launch the full 4-tab interface:
+Launches the full 4-tab interface:
+```bash
+yaaat
+```
 
+
+From the local directory: 
 ```bash
 python -m yaaat
 ```
 
-Or from Python:
+From Python command line:
 
 ```python
 from yaaat import main
@@ -88,6 +94,31 @@ Paginated grid view of mel spectrograms across a dataset. Define named
 batch annotation columns (e.g. has_noise, has_bifurcation). Batch
 annotate selected files True/False. Export to CSV.
 
-## Copyright and License
 
+
+
+## Copyright and License
 Copyright 2025-2026 laelume aka Ashlae Blum'e. Licensed under MIT License.
+
+Please ⭐ or follow us if you enjoy this work !! 
+
+To cite the repository:
+
+@software{blume2025yaaat,
+  author       = {Ashlae Blum'e},
+  title        = {{YAAAT: Yet Another Audio Annotation Tool}},
+  year         = {2025},
+  url          = {https://github.com/laelume/yaaat},
+  version      = {0.2.0},
+  note         = {GitHub repository}
+}
+
+To cite the paper:
+
+@article{blume2026yaaat,
+  author  = {Ashlae Blum'e},
+  title   = {{YAAAT! Yet Another Audio Annotation Tool}},
+  year    = {2026},
+  url     = {https://hal.science/hal-05638791v2},
+  note    = {HAL preprint, version 2}
+}
