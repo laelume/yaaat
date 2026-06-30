@@ -26,8 +26,18 @@ from tkinter import filedialog, messagebox
 
 from yaaat.core import audio_utils
 from yaaat.core import annotation_io
+import time
 
 logger = logging.getLogger(__name__)
+
+
+
+# === === === === === === === ===
+# verbosity flag — set False to silence debug prints for this loader
+_VERBOSE_AUTOLOAD = True
+# ==== ==== ==== ====
+
+
 
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 # TEST AUDIO PATH — relative to package root
@@ -146,30 +156,70 @@ def auto_load_directory(layer):
     """
     last_dir = load_last_directory()
 
+    # D E B U G  — resolved last-directory pointer read from persistence
+    if _VERBOSE_AUTOLOAD:
+        logger.info("[autoload] last_dir resolved -> %r", last_dir)
+        logger.info("[autoload] last_dir exists  -> %s",
+                    bool(last_dir and last_dir.exists()))
+
     if last_dir and last_dir.exists():
         logger.info("Auto-loading: %s", last_dir)
 
         layer.audio_files = natsorted(last_dir.rglob('*.wav'))
         layer.base_audio_dir = last_dir
 
+        # D E B U G  — wav discovery count under the resolved directory
+        if _VERBOSE_AUTOLOAD:
+            logger.info("[autoload] wav files found -> %d",
+                        len(layer.audio_files))
+
         if layer.audio_files:
             dataset_name = last_dir.name
             layer.annotation_dir = _default_annotation_dir(dataset_name)
+
+            # D E B U G  — annotation dir resolved from dataset name; log
+            #              existence before mkdir to expose missing-from-
+            #              last-time state
+            if _VERBOSE_AUTOLOAD:
+                logger.info("[autoload] annotation_dir -> %s (exists=%s)",
+                            layer.annotation_dir,
+                            layer.annotation_dir.exists())
+
             layer.annotation_dir.mkdir(parents=True, exist_ok=True)
 
             annotation_io.load_global_point_annotations_into(layer)
-
+            
             layer.current_file_idx = 0
+
+            # D E B U G  — handoff to per-file loader; pysoniq loader symbol
+            #              failure surfaces inside load_current_file
+            if _VERBOSE_AUTOLOAD:
+                logger.info("[autoload] loading file idx 0 -> %s",
+                            layer.audio_files[0])
+
             layer.load_current_file()
             return
+    
+    # F A L L B A C K  [FALLBACK:autoload-test-audio]
+    # Reached when no persisted directory, the directory is gone, or it holds
+    # no wav files. Temporary path until persistence validation is implemented.
+    
+    if _VERBOSE_AUTOLOAD:
+        logger.info("[autoload] F A L L B A C K -> test audio "
+                    "(last_dir missing or empty)")
+    
 
     # No last directory or no files found — fall back to test audio
     load_test_audio(layer)
 
 
+                
 ##    <(''<)  <( ' ' )>  (>'')>
 # FILE LOADING
 ##    <(''<)  <( ' ' )>  (>'')>
+
+# D E B U G  — stage timers; elapsed per stage exposes decode vs STFT cost
+_t_load_start = time.perf_counter() if _VERBOSE_AUTOLOAD else None
 
 def load_current_file(layer):
     """Load audio and annotations for layer.current_file_idx.
@@ -182,6 +232,15 @@ def load_current_file(layer):
 
     audio_file = layer.audio_files[layer.current_file_idx]
     logger.info("Loading %s", audio_file.name)
+
+
+    # D E B U G  — resolved file path and on-disk existence before any load;
+    #              isolates missing-file from loader-symbol failure
+    if _VERBOSE_AUTOLOAD:
+        logger.info("[loadfile] idx %d -> %s", layer.current_file_idx, audio_file)
+        logger.info("[loadfile] file exists -> %s", audio_file.is_file())
+        logger.info("[loadfile] skip_reload -> %s",
+                    getattr(layer, '_skip_reload', False))
 
     # (つ -' _ '- )つ    (つ -' _ '- )つ
     # TAB SWITCH PATH — recompute display only, preserve annotation state
@@ -196,12 +255,38 @@ def load_current_file(layer):
     # (つ -' _ '- )つ    (つ -' _ '- )つ
 
     # Load mono float32 audio via pysoniq
+    # D E B U G  — about to call loader symbol; if execution stops after the
+    #              prior print and before the next, the loader call is the break
+    if _VERBOSE_AUTOLOAD:
+        logger.info("[loadfile] calling pysoniq.load_audio")
+
     layer.y, layer.sr = pysoniq.load_audio(str(audio_file))
+
+    # D E B U G  — loader returned; shape and rate confirm a successful read
+    #            — decode elapsed; marks end of disk-read + decode stage
+
+    if _VERBOSE_AUTOLOAD:
+        _t_decoded = time.perf_counter()
+        logger.info("[loadfile] decode elapsed -> %.4f s",
+                    _t_decoded - _t_load_start)
+        logger.info("[loadfile] loaded y.shape=%s sr=%s",
+                    getattr(layer.y, 'shape', None), layer.sr)
+
     if layer.y.ndim > 1:
         # Collapse stereo to mono — all audio must be mono throughout the pipeline
         layer.y = np.mean(layer.y, axis=1)
 
+    # D E B U G  — spectrogram stage start
+    if _VERBOSE_AUTOLOAD:
+        _t_spec_start = time.perf_counter()
+
     layer.compute_spectrogram()
+
+    # D E B U G  — STFT elapsed; compare against decode to rank the bottleneck
+    if _VERBOSE_AUTOLOAD:
+        logger.info("[loadfile] spectrogram elapsed -> %.4f s",
+                    time.perf_counter() - _t_spec_start)
+
     layer.spec_image = None
 
     # Tab-specific annotation load (override in subclass)
@@ -215,6 +300,10 @@ def load_current_file(layer):
     layer.update_display(recompute_spec=True)
     update_progress(layer)
 
+    # D E B U G  — total full-load elapsed; sum of all stages for this file
+    if _VERBOSE_AUTOLOAD:
+        logger.info("[loadfile] total full-load elapsed -> %.4f s",
+                    time.perf_counter() - _t_load_start)
 
 ##    <(''<)  <( ' ' )>  (>'')>
 # NAVIGATION

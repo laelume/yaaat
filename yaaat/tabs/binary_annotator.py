@@ -1,25 +1,25 @@
 """
-tabs/binary_annotator.py
+tabs/batch_annotator.py
 
-Binary annotator tab for YAAAT.
+Batch annotator tab for YAAAT.
 Inherits from GridLayer — paginated multi-file grid spectrogram view.
 
 Responsibilities:
     - Display audio files as a paginated grid of spectrograms
     - Click to toggle file selection, Shift+Click for range selection
-    - Define named binary annotation columns (e.g. 'has_noise', 'has_bifurcation')
+    - Define named batch annotation columns (e.g. 'has_noise', 'has_bifurcation')
     - Batch annotate selected files True/False per column
     - Optional contour overlay per grid cell (from contours.processing)
     - Export annotations to CSV
-    - Save/load per-audio _binary.json via annotation_io merge-write
-    - Save/load column schema to _binary_columns.json (dataset-level)
+    - Save/load per-audio _batch.json via annotation_io merge-write
+    - Save/load column schema to _batch_columns.json (dataset-level)
 
 File schema (Option B — hybrid):
-    _binary_columns.json  — dataset-level column definitions (names, order)
+    _batch_columns.json  — dataset-level column definitions (names, order)
         Written once when columns are added/removed.
         Lives in annotation_dir, not per-audio.
-    {prefix}_{stem}_binary.json — per-audio label values
-        {'binary_labels': {'has_noise': true, ...}, spec_params, psd_params}
+    {prefix}_{stem}_batch.json — per-audio label values
+        {'batch_labels': {'has_noise': true, ...}, spec_params, psd_params}
         null = not yet labeled (distinct from false).
 
 GridLayer responsibilities (inherited):
@@ -39,12 +39,13 @@ Spectrogram computation:
     Mel scale, n_mels=64, per-file standardization and normalization.
     Stored in grid_spectrograms cache keyed by str(filepath).
 
-Annotation file: {prefix}_{stem}_binary.json
+Annotation file: {prefix}_{stem}_batch.json
     Written via annotation_io.merge_and_save().
     Carries contour_source key pointing to _changepoints.json.
 """
 
 import logging
+import time
 import traceback
 import re
 
@@ -62,7 +63,7 @@ from yaaat.core.grid_layer import GridLayer
 from yaaat.core import audio_utils
 from yaaat.core import annotation_io
 from yaaat.core.annotation_io import (
-    SUFFIX_BINARY,
+    SUFFIX_BATCH,
     SUFFIX_CHANGEPOINTS,
     resolve_annotation_path,
     merge_and_save,
@@ -81,7 +82,7 @@ from yaaat.config import CONFIG
 # Single file per annotation directory — dataset-level, not per-audio.
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-_BINARY_COLUMNS_FILENAME = "_binary_columns.json"
+_BATCH_COLUMNS_FILENAME = "_batch_columns.json"
 
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 # HIGHPASS FILTER PARAMETERS
@@ -94,7 +95,7 @@ _HIGHPASS_ORDER     = 5
 
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 # GRID SPECTROGRAM PARAMETERS
-# Mel scale with 64 bands — sufficient resolution for binary annotation.
+# Mel scale with 64 bands — sufficient resolution for batch annotation.
 # Per-file standardization: (S - mean) / std, clipped to [-3, 3], rescaled to [0, 1].
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 
@@ -102,17 +103,42 @@ _GRID_N_MELS          = CONFIG["grid_n_mels"]
 _GRID_STANDARDIZE_STD = 3.0
 
 
+# === === === === === === === === === === === === === === === === === ===
+# LOAD TIMING GATE
+# Mirrors the grid_layer nav-debug gate. Routes per-file load/compute timing
+# through logger.debug so verbosity is controlled by log level. Set True to
+# force per-file timing to stdout without reconfiguring the logger.
+# === === === === === === === === === === === === === === === === === ===
+_DEBUG_LOAD = True  # VERBOSE_LOAD: force per-file load timing to stdout
+
+
+def _dbg_load(msg):
+    """Emit a per-file load-timing line when load tracing is active.
+
+    Routes through logger.debug for normal use; prints unconditionally when
+    _DEBUG_LOAD is True so timing is visible without logger reconfiguration.
+
+    Args:
+        msg: str — preformatted timing message
+    """
+    # VERBOSE_LOAD: dual-path emit — logger for normal use, print for force mode
+    logger.debug(msg)
+    if _DEBUG_LOAD:
+        print(f"[LOAD] {msg}")
+
+# ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ====
+
 ##    <(''<)  <( ' ' )>  (>'')>
 
-class BinaryAnnotator(GridLayer):
-    """Binary annotation tab — paginated grid view for dataset-level labeling.
+class BatchAnnotator(GridLayer):
+    """Batch annotation tab — paginated grid view for dataset-level labeling.
 
     Each grid cell shows a mel spectrogram for one audio file.
     Files are selected and batch-annotated True/False per named column.
     """
 
     def __init__(self, root):
-        """Initialize binary annotation state before calling GridLayer.__init__."""
+        """Initialize batch annotation state before calling GridLayer.__init__."""
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # SELECTION STATE
@@ -122,13 +148,13 @@ class BinaryAnnotator(GridLayer):
         self.selected_files = set()
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
-        # BINARY ANNOTATION DATA
-        # binary_columns: {column_name: {Path: bool or None}}
+        # BATCH ANNOTATION DATA
+        # batch_columns: {column_name: {Path: bool or None}}
         #   None = not yet labeled, distinct from False
         # active_column: currently selected column for batch annotation
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        self.binary_columns = {}
+        self.batch_columns = {}
         self.active_column  = tk.StringVar(value='')
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
@@ -145,22 +171,22 @@ class BinaryAnnotator(GridLayer):
         super().__init__(root)
 
         if isinstance(root, tk.Tk):
-            self.root.title("Binary Annotator - YAAAT")
+            self.root.title("Batch Annotator - YAAAT")
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # GRID CONTROLS — injected into GridLayer.setup_custom_controls()
     ##    <(''<)  <( ' ' )>  (>'')>
 
     def setup_grid_controls(self):
-        """Add binary-annotation-specific controls below grid size selector."""
+        """Add batch-annotation-specific controls below grid size selector."""
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # COLUMN MANAGEMENT
-        # Columns define what binary labels exist in the dataset.
-        # Column schema is saved to _binary_columns.json — dataset-level.
+        # Columns define what batch labels exist in the dataset.
+        # Column schema is saved to _batch_columns.json — dataset-level.
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        ttk.Label(self.control_panel, text="Binary Annotation:",
+        ttk.Label(self.control_panel, text="Batch Annotation:",
                   font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
 
         column_frame = ttk.Frame(self.control_panel)
@@ -288,16 +314,29 @@ class BinaryAnnotator(GridLayer):
         start_idx = self.current_page * self.grid_size
         end_idx   = min(start_idx + self.grid_size, len(self.audio_files))
 
+        
         for i in range(start_idx, end_idx):
+            # VERBOSE_LOAD: unconditional progress marker — bypasses the
+            # _DEBUG_LOAD gate to confirm loop entry and per-iteration progress
+            # on an uncached page. Prints before the cache check so a cached
+            # page also shows iteration. Remove after the freeze is localized.
+            print(f"[LOAD-PROBE] enter iter i={i} of [{start_idx},{end_idx})")
+
             filepath = self.audio_files[i]
 
             if str(filepath) in self.grid_spectrograms:
                 continue
 
             try:
+                # VERBOSE_LOAD: split timer at the load/compute boundary to
+                # attribute per-file cost between disk I/O+decode and STFT.
+                _t_file_start = time.perf_counter()
+
                 y, sr = pysoniq.load_audio(str(filepath))
                 if y.ndim > 1:
                     y = np.mean(y, axis=1)
+
+                _t_loaded = time.perf_counter()
 
                 # (つ -' _ '- )つ    (つ -' _ '- )つ
                 # Highpass filter — suppresses low-frequency noise before
@@ -328,9 +367,27 @@ class BinaryAnnotator(GridLayer):
 
                 self.grid_spectrograms[str(filepath)] = mel_norm
 
+                # VERBOSE_LOAD: per-file deltas — load (I/O+decode) vs. compute
+                # (filter+mel spectrogram+normalize). Aggregated across the page
+                # these sum to the load+compute phase timed in update_grid_display.
+                # dur_s added as a safeguard: if compute spikes do not track
+                # duration, signal length is eliminated as the cause and the
+                # spike source is elsewhere (decode path, codec, cold read).
+                # sr guarded against zero to avoid a divide error on a bad load.
+                _t_done = time.perf_counter()
+                _dur_s  = (len(y) / sr) if sr else float('nan')
+                _dbg_load(
+                    f"process_grid_page FILE {filepath.name}: "
+                    f"load={(_t_loaded - _t_file_start) * 1000:.1f}ms "
+                    f"compute={(_t_done - _t_loaded) * 1000:.1f}ms "
+                    f"dur_s={_dur_s:.3f}"
+                )
+
             except Exception as e:
                 logger.error("Error processing %s: %s", filepath.name, e)
                 self.grid_spectrograms[str(filepath)] = None
+
+
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # GRID CELL RENDERING
@@ -366,8 +423,8 @@ class BinaryAnnotator(GridLayer):
         border_width = 2
 
         if (self.active_column.get() and
-                self.active_column.get() in self.binary_columns):
-            col_data = self.binary_columns[self.active_column.get()]
+                self.active_column.get() in self.batch_columns):
+            col_data = self.batch_columns[self.active_column.get()]
             val      = col_data.get(filepath)
             if val is True:
                 border_color = 'lime'
@@ -510,20 +567,20 @@ class BinaryAnnotator(GridLayer):
     ##    <(''<)  <( ' ' )>  (>'')>
 
     def _add_column(self):
-        """Add a new binary annotation column and save column schema."""
+        """Add a new batch annotation column and save column schema."""
         col_name = self.column_entry.get().strip()
 
         if not col_name:
             messagebox.showwarning("Empty Name", "Enter column name")
             return
 
-        if col_name in self.binary_columns:
+        if col_name in self.batch_columns:
             messagebox.showwarning(
                 "Exists", f"Column '{col_name}' already exists")
             return
 
         # Initialize all files to None (unlabeled)
-        self.binary_columns[col_name] = {
+        self.batch_columns[col_name] = {
             f: None for f in self.audio_files}
 
         self.column_listbox.insert(tk.END, col_name)
@@ -543,7 +600,7 @@ class BinaryAnnotator(GridLayer):
         col_name = self.column_listbox.get(selection[0])
 
         if messagebox.askyesno("Remove", f"Remove column '{col_name}'?"):
-            del self.binary_columns[col_name]
+            del self.batch_columns[col_name]
             self.column_listbox.delete(selection[0])
             if self.active_column.get() == col_name:
                 self.active_column.set('')
@@ -562,12 +619,12 @@ class BinaryAnnotator(GridLayer):
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # COLUMN SCHEMA PERSISTENCE
-    # _binary_columns.json — dataset-level, one per annotation directory.
+    # _batch_columns.json — dataset-level, one per annotation directory.
     # Stores column names and order. Written on add/remove column.
     ##    <(''<)  <( ' ' )>  (>'')>
 
     def _save_column_schema(self):
-        """Write column names and order to _binary_columns.json.
+        """Write column names and order to _batch_columns.json.
 
         This is the authoritative column definition file for the dataset.
         Written to annotation_dir — not per-audio.
@@ -575,10 +632,10 @@ class BinaryAnnotator(GridLayer):
         if self.annotation_dir is None:
             return
 
-        schema_path = Path(self.annotation_dir) / _BINARY_COLUMNS_FILENAME
+        schema_path = Path(self.annotation_dir) / _BATCH_COLUMNS_FILENAME
         schema = {
-            "columns":     list(self.binary_columns.keys()),
-            "description": "Binary annotation column schema for YAAAT binary annotator",
+            "columns":     list(self.batch_columns.keys()),
+            "description": "Batch annotation column schema for YAAAT batch annotator",
         }
 
         try:
@@ -591,14 +648,14 @@ class BinaryAnnotator(GridLayer):
             logger.error("Failed to save column schema: %s", e)
 
     def _load_column_schema(self):
-        """Load column names from _binary_columns.json.
+        """Load column names from _batch_columns.json.
 
         Returns list of column names in order, or empty list if not found.
         """
         if self.annotation_dir is None:
             return []
 
-        schema_path = Path(self.annotation_dir) / _BINARY_COLUMNS_FILENAME
+        schema_path = Path(self.annotation_dir) / _BATCH_COLUMNS_FILENAME
         if not schema_path.exists():
             return []
 
@@ -616,7 +673,7 @@ class BinaryAnnotator(GridLayer):
     ##    <(''<)  <( ' ' )>  (>'')>
 
     def _batch_annotate(self, value):
-        """Set binary label for all selected files in the active column.
+        """Set batch label for all selected files in the active column.
 
         value: True, False, or None (clear label).
         Triggers per-audio save for each annotated file.
@@ -630,7 +687,7 @@ class BinaryAnnotator(GridLayer):
 
         col_name = self.active_column.get()
         for filepath in self.selected_files:
-            self.binary_columns[col_name][filepath] = value
+            self.batch_columns[col_name][filepath] = value
 
         self.changes_made = True
 
@@ -671,9 +728,9 @@ class BinaryAnnotator(GridLayer):
     ##    <(''<)  <( ' ' )>  (>'')>
 
     def _export_csv(self):
-        """Export all binary annotations to a CSV file.
+        """Export all batch annotations to a CSV file.
 
-        Reads column order from _binary_columns.json (authoritative).
+        Reads column order from _batch_columns.json (authoritative).
         Rows are sorted by parent directory then natural file index.
         Unlabeled files have None/NaN in label columns.
         """
@@ -684,7 +741,7 @@ class BinaryAnnotator(GridLayer):
         # Load column order from schema file — preserves addition order
         column_names = self._load_column_schema()
         if not column_names:
-            column_names = list(self.binary_columns.keys())
+            column_names = list(self.batch_columns.keys())
 
         rows = []
         for filepath in self.audio_files:
@@ -701,7 +758,7 @@ class BinaryAnnotator(GridLayer):
             }
 
             for col_name in column_names:
-                col_data    = self.binary_columns.get(col_name, {})
+                col_data    = self.batch_columns.get(col_name, {})
                 row[col_name] = col_data.get(filepath)
 
             rows.append(row)
@@ -718,7 +775,7 @@ class BinaryAnnotator(GridLayer):
         save_path = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv")],
-            initialfile="binary_annotations.csv"
+            initialfile="batch_annotations.csv"
         )
 
         if save_path:
@@ -728,12 +785,12 @@ class BinaryAnnotator(GridLayer):
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # SAVE / LOAD
-    # Per-audio: {prefix}_{stem}_binary.json via merge_and_save
-    # Dataset-level: _binary_columns.json via _save_column_schema
+    # Per-audio: {prefix}_{stem}_batch.json via merge_and_save
+    # Dataset-level: _batch_columns.json via _save_column_schema
     ##    <(''<)  <( ' ' )>  (>'')>
 
     def _save_file_annotation(self, filepath):
-        """Save binary labels for a single audio file to _binary.json.
+        """Save batch labels for a single audio file to _batch.json.
 
         Writes all column values for this file.
         null in JSON = None in Python = unlabeled (distinct from false).
@@ -744,23 +801,23 @@ class BinaryAnnotator(GridLayer):
 
         path = resolve_annotation_path(
             filepath, self.base_audio_dir,
-            self.annotation_dir, SUFFIX_BINARY)
+            self.annotation_dir, SUFFIX_BATCH)
 
         changepoints_path = resolve_annotation_path(
             filepath, self.base_audio_dir,
             self.annotation_dir, SUFFIX_CHANGEPOINTS)
 
         # Collect label values for all columns for this file
-        binary_labels = {}
-        for col_name, col_data in self.binary_columns.items():
+        batch_labels = {}
+        for col_name, col_data in self.batch_columns.items():
             val = col_data.get(filepath)
             # Store None as JSON null — explicitly unlabeled
-            binary_labels[col_name] = val
+            batch_labels[col_name] = val
 
         tab_data = {
             "audio_file":     str(filepath),
             "contour_source": changepoints_path.name,
-            "binary_labels":  binary_labels,
+            "batch_labels":  batch_labels,
             "spec_params":    build_spec_params(self, orientation="horizontal"),
             "psd_params":     build_psd_params(self),
             "skip":           False,
@@ -768,12 +825,12 @@ class BinaryAnnotator(GridLayer):
         }
 
         merge_and_save(path, tab_data)
-        logger.debug("Saved binary annotation: %s", path.name)
+        logger.debug("Saved batch annotation: %s", path.name)
 
     def save_custom_data(self):
-        """Save binary annotations for all files that have been labeled.
+        """Save batch annotations for all files that have been labeled.
 
-        Saves per-audio _binary.json for every file with at least one
+        Saves per-audio _batch.json for every file with at least one
         non-None label value. Also saves column schema.
         """
         if self.annotation_dir is None:
@@ -784,7 +841,7 @@ class BinaryAnnotator(GridLayer):
             # Check if this file has any non-None labels
             has_labels = any(
                 col_data.get(filepath) is not None
-                for col_data in self.binary_columns.values()
+                for col_data in self.batch_columns.values()
             )
             if has_labels:
                 self._save_file_annotation(filepath)
@@ -792,12 +849,12 @@ class BinaryAnnotator(GridLayer):
 
         self._save_column_schema()
         self.changes_made = False
-        logger.info("Saved binary annotations for %d files", saved_count)
+        logger.info("Saved batch annotations for %d files", saved_count)
 
     def load_custom_data(self):
-        """Load binary annotations for the current page from _binary.json files.
+        """Load batch annotations for the current page from _batch.json files.
 
-        Also loads column schema from _binary_columns.json on first call.
+        Also loads column schema from _batch_columns.json on first call.
         Per-audio files are loaded for all files on the current page.
         Files not yet annotated produce None values for all columns.
         """
@@ -813,8 +870,8 @@ class BinaryAnnotator(GridLayer):
         if column_names:
             # Initialize columns from schema if not already present
             for col_name in column_names:
-                if col_name not in self.binary_columns:
-                    self.binary_columns[col_name] = {}
+                if col_name not in self.batch_columns:
+                    self.batch_columns[col_name] = {}
 
             # Sync listbox to loaded schema
             self.column_listbox.delete(0, tk.END)
@@ -829,21 +886,21 @@ class BinaryAnnotator(GridLayer):
             filepath = self.audio_files[i]
             path     = resolve_annotation_path(
                 filepath, self.base_audio_dir,
-                self.annotation_dir, SUFFIX_BINARY)
+                self.annotation_dir, SUFFIX_BATCH)
 
             data = load_and_check_params(
-                path, self, SUFFIX_BINARY, self.annotation_dir)
+                path, self, SUFFIX_BATCH, self.annotation_dir)
 
             if not data:
                 continue
 
-            binary_labels = data.get('binary_labels', {})
-            for col_name, val in binary_labels.items():
-                if col_name not in self.binary_columns:
-                    self.binary_columns[col_name] = {}
-                self.binary_columns[col_name][filepath] = val
+            batch_labels = data.get('batch_labels', {})
+            for col_name, val in batch_labels.items():
+                if col_name not in self.batch_columns:
+                    self.batch_columns[col_name] = {}
+                self.batch_columns[col_name][filepath] = val
 
-        logger.debug("Loaded binary annotations for page %d",
+        logger.debug("Loaded batch annotations for page %d",
                      self.current_page)
 
     ##    <(''<)  <( ' ' )>  (>'')>
@@ -873,7 +930,7 @@ class BinaryAnnotator(GridLayer):
             return
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
-        # Binary annotator does not load a single file — it loads a page.
+        # Batch annotator does not load a single file — it loads a page.
         # BaseLayer.load_current_file() is bypassed in favor of process_audio()
         # which calls process_grid_page().
         # (つ -' _ '- )つ    (つ -' _ '- )つ
@@ -898,9 +955,9 @@ class BinaryAnnotator(GridLayer):
 ##    <(''<)  <( ' ' )>  (>'')>
 
 def main():
-    """Launch BinaryAnnotator as a standalone tab."""
+    """Launch BatchAnnotator as a standalone tab."""
     root = tk.Tk()
-    app  = BinaryAnnotator(root)
+    app  = BatchAnnotator(root)
     root.geometry("1400x900")
     root.mainloop()
 
@@ -909,5 +966,5 @@ if __name__ == "__main__":
     main()
 
 # U S A G I
-# from yaaat.tabs.binary_annotator import BinaryAnnotator
-# root = tk.Tk(); app = BinaryAnnotator(root); root.geometry("1400x900"); root.mainloop()
+# from yaaat.tabs.batch_annotator import BatchAnnotator
+# root = tk.Tk(); app = BatchAnnotator(root); root.geometry("1400x900"); root.mainloop()

@@ -12,7 +12,7 @@ Tab registration:
         ChangepointAnnotator — contour/changepoint annotation
         PeakAnnotator      — dual-resolution peak annotation
         HarmonicAnnotator  — F0/harmonic detection and correction
-        BinaryAnnotator    — grid-based binary dataset labeling
+        BatchAnnotator    — grid-based batch dataset labeling
 
     Optional tabs (loaded via config or CLI flag — not yet implemented):
         Future tabs registered here when added to yaaat.layers
@@ -47,7 +47,7 @@ from yaaat.tabs.base_annotator        import BaseAnnotator
 from yaaat.tabs.changepoint_annotator import ChangepointAnnotator
 from yaaat.tabs.peak_annotator        import PeakAnnotator
 from yaaat.tabs.harmonic_annotator    import HarmonicAnnotator
-from yaaat.tabs.binary_annotator      import BinaryAnnotator
+from yaaat.tabs.batch_annotator      import BatchAnnotator
 
 
 ##    <(''<)  <( ' ' )>  (>'')>
@@ -71,7 +71,7 @@ class YAAATApp:
         ("Changepoint",  ChangepointAnnotator),
         ("Peak",         PeakAnnotator),
         ("Harmonic",     HarmonicAnnotator),
-        ("Binary",       BinaryAnnotator),
+        ("Batch",       BatchAnnotator),
     ]
 
     def __init__(self, root):

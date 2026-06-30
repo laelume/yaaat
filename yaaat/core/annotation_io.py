@@ -8,7 +8,7 @@ File structure per audio file (one file per tab, shared annotation directory):
     {prefix}_{stem}_changepoints.json   ← canonical geometry: contours, contour_metrics
     {prefix}_{stem}_peaks.json          ← peak annotations and PSD peaks
     {prefix}_{stem}_harmonics.json      ← harmonic lines, ridges, contours
-    {prefix}_{stem}_binary.json         ← binary grid selections
+    {prefix}_{stem}_batch.json         ← batch grid selections
 
 All four files carry:
     spec_params   ← spectrogram parameters at time of save
@@ -54,14 +54,14 @@ logger = logging.getLogger(__name__)
 SUFFIX_CHANGEPOINTS = "changepoints"
 SUFFIX_PEAKS        = "peaks"
 SUFFIX_HARMONICS    = "harmonics"
-SUFFIX_BINARY       = "binary"
+SUFFIX_BATCH       = "batch"
 
 # Suffix to orientation mapping — used for tab mismatch detection
 _SUFFIX_ORIENTATION = {
     SUFFIX_CHANGEPOINTS: "horizontal",
     SUFFIX_PEAKS:        "vertical",
     SUFFIX_HARMONICS:    "horizontal",
-    SUFFIX_BINARY:       "horizontal",
+    SUFFIX_BATCH:       "horizontal",
 }
 
 # Param mismatch log filename
@@ -751,7 +751,7 @@ def compute_contour_metrics(contours):
 # from yaaat.core.annotation_io import (
 #     resolve_annotation_path, merge_and_save, load_and_check_params,
 #     mark_skip, is_skipped, compute_contour_metrics,
-#     SUFFIX_CHANGEPOINTS, SUFFIX_PEAKS, SUFFIX_HARMONICS, SUFFIX_BINARY
+#     SUFFIX_CHANGEPOINTS, SUFFIX_PEAKS, SUFFIX_HARMONICS, SUFFIX_BATCH
 # )
 # path = resolve_annotation_path(audio_file, base_dir, annotation_dir, SUFFIX_CHANGEPOINTS)
 # merge_and_save(path, {"contours": [...], "spec_params": {...}})

@@ -83,11 +83,11 @@ draggable correction lines. Computes inter-harmonic valley boundaries
 (min energy search) for spectral band visualization. Multiple ridge
 detection methods: max, peaks, centroid, parabolic, peak ratio.
 
-#### Binary Annotator
+#### Batch Annotator
 Paginated grid view of mel spectrograms across a dataset. Define named
-binary annotation columns (e.g. has_noise, has_bifurcation). Batch
+batch annotation columns (e.g. has_noise, has_bifurcation). Batch
 annotate selected files True/False. Export to CSV.
 
-## License
+## Copyright and License
 
-MIT License - Copyright (c) 2025-2026 laelume
+Copyright 2025-2026 laelume aka Ashlae Blum'e. Licensed under MIT License.

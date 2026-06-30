@@ -25,6 +25,7 @@ Layout:
 """
 
 import logging
+import time
 import traceback
 
 import numpy as np
@@ -52,6 +53,33 @@ _DEFAULT_GRID_SIZE = CONFIG["grid_size"]    # files per page
 _GRID_SIZE_OPTIONS = [4, 9, 16, 25, 36]
 _GRID_REFRESH_DELAY_MS = 50  # ms delay before redraw after grid size change
 
+# === === === === === === === === === === === === === === === === === ===
+# NAV DEBUG GATE
+# _DEBUG_NAV forces navigation debug logging on regardless of logger level.
+# Leave False in normal operation; logger.debug still fires when the logger
+# level is set to DEBUG. Two independent toggles: this constant OR log level.
+# Used by _dbg_nav() to instrument page turns, redraws, and cell dispatch.
+# === === === === === === === === === === === === === === === === === ===
+
+_DEBUG_NAV = True  # VERBOSE_NAV: set True to force-print navigation trace
+
+
+def _dbg_nav(msg):
+    """Emit a navigation debug line when verbose nav tracing is active.
+
+    Routes through logger.debug so output respects the verbosity flag.
+    When _DEBUG_NAV is True, also prints unconditionally to stdout so the
+    trace is visible without reconfiguring the logger level.
+
+    Args:
+        msg: str — preformatted debug message
+    """
+    # VERBOSE_NAV: dual-path emit — logger for normal use, print for force mode
+    logger.debug(msg)
+    if _DEBUG_NAV:
+        print(f"[NAV] {msg}")
+
+# ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ====
 
 ##    <(''<)  <( ' ' )>  (>'')>
 
@@ -88,6 +116,16 @@ class GridLayer(BaseLayer):
 
         # Index of the currently selected grid cell (file_idx), or None
         self.selected_cell = None
+
+        # === === === === === === === === === === === === === === === === ===
+        # MPL CONNECT ACCUMULATION COUNTER
+        # Incremented once per mpl_connect call in update_grid_display.
+        # Never reset — running total is the accumulation proxy. A value that
+        # climbs by one cell-set per redraw confirms callbacks are never
+        # disconnected (direct cause candidate for the dispatch corruption and
+        # the frozen-interface symptom on repeated navigation).
+        # === === === === === === === === === === === === === === === === ===
+        self._mpl_cid_count = 0  # VERBOSE_NAV: cumulative mpl_connect registrations
 
         # Active grid size tk var for button highlight tracking
         self.grid_size_var = tk.IntVar(value=_DEFAULT_GRID_SIZE)
@@ -296,9 +334,17 @@ class GridLayer(BaseLayer):
         Calls draw_grid_overlays() for each cell after rendering.
         Binds on_grid_click() to each cell axis.
         """
-        print(f"DEBUG update_grid_display: audio_files={len(self.audio_files)}, grid_fig={self.grid_fig}")
+        
+        # VERBOSE_NAV: replaced bare debug print with gated _dbg_nav emit
+        _dbg_nav(
+            f"update_grid_display ENTRY: n_files={len(self.audio_files)} "
+            f"grid_fig={'set' if self.grid_fig is not None else 'None'} "
+            f"current_page={self.current_page}"
+        )
 
         if not self.audio_files or self.grid_fig is None:
+            # VERBOSE_NAV: early return — nothing to draw or canvas not built yet
+            _dbg_nav("update_grid_display ABORT: no audio_files or grid_fig is None")
             return
 
         try:
@@ -315,13 +361,46 @@ class GridLayer(BaseLayer):
             fig_h = canvas_h / self.grid_fig.dpi if canvas_h > 1 else 10
             self.grid_fig.set_size_inches(fig_w, fig_h, forward=True)
 
+            # VERBOSE_NAV: canvas geometry trace — exposes the container-layout
+            # hypothesis. If canvas_w/canvas_h stay at 1 across page turns the
+            # widget is not receiving geometry, implicating the pack/create_window
+            # conflict in setup_grid_view rather than the page-index logic.
+            _dbg_nav(
+                f"update_grid_display GEOM: canvas_w={canvas_w} canvas_h={canvas_h} "
+                f"fig_w={fig_w:.2f} fig_h={fig_h:.2f} rows={rows} cols={cols}"
+            )
+
             # Compute file indices for this page
             start_idx = self.current_page * self.grid_size
             end_idx   = min(start_idx + self.grid_size, len(self.audio_files))
             page_file_indices = list(range(start_idx, end_idx))
 
+            # VERBOSE_NAV: page-bounds trace — confirms the index window shifts
+            # on page turn. If start_idx/end_idx change but the display does not,
+            # the redraw path is suspect, not the index arithmetic.
+            _dbg_nav(
+                f"update_grid_display BOUNDS: start_idx={start_idx} "
+                f"end_idx={end_idx} n_cells={len(page_file_indices)}"
+            )
+
+            # VERBOSE_NAV: time the load+compute phase in isolation. This phase
+            # runs synchronously on the Tk main thread; a large delta here is
+            # consistent with the interface freeze on page turn.
+            _t_load_start = time.perf_counter()
+
             # Populate spectrogram cache for visible files
             self.process_grid_page()
+
+            _t_load_end = time.perf_counter()
+            _dbg_nav(
+                f"update_grid_display PHASE load+compute: "
+                f"{(_t_load_end - _t_load_start) * 1000:.1f}ms "
+                f"n_cells={len(page_file_indices)}"
+            )
+
+            # VERBOSE_NAV: mark start of the render phase (cell subplot build,
+            # imshow, overlays, and the per-cell mpl_connect registration).
+            _t_render_start = time.perf_counter()
 
             self.grid_axes = []
 
@@ -364,20 +443,56 @@ class GridLayer(BaseLayer):
                 self.draw_grid_overlays(ax, file_idx)
 
                 # Bind click to this cell
+                
                 # Capture file_idx in closure via default argument
                 self.grid_canvas.mpl_connect(
                     'button_press_event',
                     lambda ev, idx=file_idx, a=ax: self._on_grid_cell_press(ev, idx, a)
                 )
+                # VERBOSE_NAV: increment cumulative registration counter. No
+                # disconnect is paired with this connect — the running total is
+                # the accumulation evidence, logged once per redraw below.
+                self._mpl_cid_count += 1
 
             self.grid_fig.tight_layout(pad=0.4)
+
             self.grid_canvas.draw()
+
+            # VERBOSE_NAV: render phase delta and cumulative connection count.
+            # Reading: if load+compute dominates, the freeze is I/O+STFT bound
+            # (address in process_grid_page — threading/checkpoint). If render
+            # grows each turn while _mpl_cid_count climbs, the freeze is
+            # accumulation-bound (address by disconnecting stale callbacks).
+            _t_render_end = time.perf_counter()
+            _dbg_nav(
+                f"update_grid_display PHASE render+draw: "
+                f"{(_t_render_end - _t_render_start) * 1000:.1f}ms "
+                f"mpl_cid_total={self._mpl_cid_count}"
+            )
+
 
             self._update_page_label()
 
         except Exception as e:
             logger.error("ERROR in update_grid_display: %s", e)
             logger.debug(traceback.format_exc())
+
+    # def _on_grid_cell_press(self, event, file_idx, ax):
+    #     """Internal dispatcher for grid cell clicks.
+
+    #     Verifies the click landed in the correct cell axis before
+    #     forwarding to on_grid_click().
+
+    #     Args:
+    #         event:    matplotlib MouseEvent
+    #         file_idx: int — file index for this cell
+    #         ax:       matplotlib Axes — this cell's axis
+    #     """
+    #     if event.inaxes == ax:
+    #         self.selected_cell = file_idx
+    #         self.on_grid_click(file_idx, event)
+    #         self.update_grid_display()
+
 
     def _on_grid_cell_press(self, event, file_idx, ax):
         """Internal dispatcher for grid cell clicks.
@@ -390,14 +505,33 @@ class GridLayer(BaseLayer):
             file_idx: int — file index for this cell
             ax:       matplotlib Axes — this cell's axis
         """
-        if event.inaxes == ax:
+        # VERBOSE_NAV: dispatch trace — fires once per registered callback.
+        # mpl_connect is called per-cell on every update_grid_display and the
+        # connections are never disconnected, so callbacks accumulate across
+        # redraws. Diagnostic reading: a SINGLE physical click that emits more
+        # than one DISPATCH line confirms callback accumulation. If the count
+        # grows by one cell-set per page turn, the accumulation is the cause of
+        # corrupted cell dispatch. If instead exactly one DISPATCH fires per
+        # click but the page does not change, the layout/redraw path is implicated.
+        matched = (event.inaxes == ax)
+        _dbg_nav(
+            f"_on_grid_cell_press DISPATCH: file_idx={file_idx} "
+            f"inaxes_match={matched} current_page={self.current_page}"
+        )
+
+        if matched:
             self.selected_cell = file_idx
+            # VERBOSE_NAV: matched cell — forwarding to subclass click handler
+            _dbg_nav(f"_on_grid_cell_press MATCH: forwarding file_idx={file_idx}")
             self.on_grid_click(file_idx, event)
             self.update_grid_display()
+
+
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # GRID SIZE AND PAGE NAVIGATION
     ##    <(''<)  <( ' ' )>  (>'')>
+
 
     def change_grid_size(self, new_size):
         """Change the number of files displayed per page and redraw.
@@ -408,6 +542,12 @@ class GridLayer(BaseLayer):
         Args:
             new_size: int — number of cells per page
         """
+        # VERBOSE_NAV: log size transition and the forced page reset
+        _dbg_nav(
+            f"change_grid_size ENTRY: old_size={self.grid_size} "
+            f"new_size={new_size} current_page={self.current_page} -> 0"
+        )
+
         self.grid_size = new_size
         self.grid_size_var.set(new_size)
         self.current_page = 0
@@ -416,20 +556,69 @@ class GridLayer(BaseLayer):
         # Brief delay ensures canvas geometry is settled before redraw
         self.grid_fig.clf()
         self.grid_canvas.draw()
+
+        # VERBOSE_NAV: deferred redraw scheduled — confirms the after() callback
+        # is queued. If the trace shows this line but no subsequent
+        # update_grid_display ENTRY, the delayed callback is being dropped.
+        _dbg_nav(
+            f"change_grid_size SCHEDULED: redraw in {_GRID_REFRESH_DELAY_MS}ms"
+        )
         self.root.after(_GRID_REFRESH_DELAY_MS, self.update_grid_display)
+
 
     def next_page(self):
         """Advance to the next grid page if one exists."""
         total_pages = self._total_pages()
+
+        # VERBOSE_NAV: log entry state before any mutation
+        _dbg_nav(
+            f"next_page ENTRY: current_page={self.current_page} "
+            f"total_pages={total_pages} grid_size={self.grid_size} "
+            f"n_files={len(self.audio_files)}"
+        )
+
+
         if self.current_page < total_pages - 1:
             self.current_page += 1
+            # VERBOSE_NAV: confirm increment took effect before redraw
+            _dbg_nav(f"next_page ADVANCE: current_page -> {self.current_page}")
+            # VERBOSE_NAV: bracket the full synchronous redraw to measure the
+            # click-to-complete latency the frozen interface is exhibiting.
+            _t_nav_start = time.perf_counter()
             self.update_grid_display()
+            _dbg_nav(
+                f"next_page TOTAL nav: "
+                f"{(time.perf_counter() - _t_nav_start) * 1000:.1f}ms"
+            )
+
+        else:
+            # VERBOSE_NAV: boundary hit — already on last page, no redraw
+            _dbg_nav("next_page BLOCKED: already on last page")
 
     def previous_page(self):
         """Go back to the previous grid page if not already on page 0."""
+        # VERBOSE_NAV: log entry state before any mutation
+        _dbg_nav(
+            f"previous_page ENTRY: current_page={self.current_page} "
+            f"grid_size={self.grid_size} n_files={len(self.audio_files)}"
+        )
+
         if self.current_page > 0:
             self.current_page -= 1
+            # VERBOSE_NAV: confirm decrement took effect before redraw
+            _dbg_nav(f"previous_page RETREAT: current_page -> {self.current_page}")
+            # VERBOSE_NAV: bracket the full synchronous redraw to measure the
+            # click-to-complete latency the frozen interface is exhibiting.
+            _t_nav_start = time.perf_counter()
             self.update_grid_display()
+            _dbg_nav(
+                f"previous_page TOTAL nav: "
+                f"{(time.perf_counter() - _t_nav_start) * 1000:.1f}ms"
+            )
+            
+        else:
+            # VERBOSE_NAV: boundary hit — already on page 0, no redraw
+            _dbg_nav("previous_page BLOCKED: already on page 0")
 
     def _total_pages(self):
         """Return total number of pages given current audio_files and grid_size.
@@ -504,7 +693,7 @@ if __name__ == "__main__":
 
 # U S A G I
 # from yaaat.core.grid_layer import GridLayer
-# class BinaryAnnotator(GridLayer):
+# class BatchAnnotator(GridLayer):
 #     def process_grid_page(self): ...
 #     def on_grid_click(self, file_idx, event): ...
 #     def draw_grid_overlays(self, ax, file_idx): ...

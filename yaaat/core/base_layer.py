@@ -124,13 +124,13 @@ class BaseLayer:
         # Owned here; read by interaction.py functions via explicit args
         # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-        # Stack of (xlim, ylim) tuples for zoom undo
+        # Stack of (xlim, ylim) tuples for zoom undo; right-click undo only unwinds scroll-zooms, not drag-zooms, after bbox update
         self.zoom_stack = []
 
-        # Drag origin for zoom rectangle
+        # Drag origin for bounding box
         self.drag_start = None
 
-        # Active matplotlib Rectangle patch for zoom preview
+        # Active matplotlib Rectangle patch for bounding box preview
         self.drag_rect = None
 
         # (つ -' _ '- )つ    (つ -' _ '- )つ
@@ -398,7 +398,7 @@ class BaseLayer:
         self.file_number_entry.bind('<Return>', lambda e: self.jump_to_file())
 
         ttk.Label(nav_frame,
-                  text="[Click+Drag: zoom | Ctrl+Wheel: zoom horizontal | Right-click: undo zoom]",
+                  text="[Click+Drag: select bbox | Ctrl+Wheel: zoom horizontal | Right-click: undo zoom]",
                   font=('', 8, 'italic')).pack(side=tk.RIGHT, padx=10)
 
         # Matplotlib figure and canvas
@@ -480,6 +480,15 @@ class BaseLayer:
     def on_custom_release(self, event):
         """Handle tab-specific mouse release. Return True if event is consumed."""
         return False
+    
+    def on_bounding_box_selected(self, t_min, t_max, f_min, f_max):
+        """Handle a committed drag-selected bounding box. No-op in base.
+
+        Region-aware tabs override to append the box to their annotation
+        list. Coordinates are pre-sorted (t_min < t_max, f_min < f_max).
+        Inert on viewer tabs — drag selects nothing.
+        """
+        pass
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # SPECTROGRAM COMPUTATION

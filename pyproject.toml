@@ -1,13 +1,15 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "yaaat"
 version = "0.2.0"
 description = "YAAAT! Yet Another Audio Annotation Tool. Interactive bioacoustic annotation tool for measuring vocalizations"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]   # adjust to actual license filename
+
 authors = [
     { name = "laelume" }
 ]
@@ -40,16 +42,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Visualization",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires-python = ">=3.9"
 
-dependencies = [
-    "numpy",
-    "scipy",
-    "matplotlib",
-    "natsort",
-    "pandas",
-    "pysoniq",
-]
+dependencies = ["numpy", "scipy", "matplotlib", "natsort", "pandas", "pysoniq>=0.1.8"]
 
 [project.optional-dependencies]
 ai = [

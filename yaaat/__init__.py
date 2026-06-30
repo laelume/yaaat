@@ -12,7 +12,7 @@ Core tabs:
     ChangepointAnnotator — contour/changepoint annotation
     PeakAnnotator        — dual-resolution peak annotation
     HarmonicAnnotator    — harmonic detection and correction
-    BinaryAnnotator      — grid-based binary dataset labeling
+    BatchAnnotator      — grid-based batch dataset labeling
 
 Companion library: pysoniq (audio I/O)
 """

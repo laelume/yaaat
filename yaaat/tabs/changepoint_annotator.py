@@ -166,6 +166,17 @@ class ChangepointAnnotator(BaseLayer):
         self.harmonic_repeat_ids = {}
         self.dragging_harmonic   = None
 
+        # BBUPDATE — bounding box state
+        # bounding_boxes: committed boxes for the session (single-file scope)
+        # bb_type: type field written per box (noise | signal | artifact)
+        # bb_save_target: 'codebase' (default) or 'daily' — read at save time
+        self.bounding_boxes = []                          # BBUPDATE
+        self.bb_type        = tk.StringVar(value='noise') # BBUPDATE
+        self.bb_save_target = tk.StringVar(value='codebase')  # BBUPDATE
+
+
+
+
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # TRACKING ACROSS FILES
         # (つ -' _ '- )つ    (つ -' _ '- )つ
@@ -371,6 +382,53 @@ class ChangepointAnnotator(BaseLayer):
 
         ttk.Separator(self.control_panel, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
+
+
+        # BBUPDATE — bounding box controls
+        ttk.Label(self.control_panel, text="Bounding Box:",
+                  font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))  # BBUPDATE
+
+        bb_type_frame = ttk.Frame(self.control_panel)                  # BBUPDATE
+        bb_type_frame.pack(fill=tk.X, pady=2)                          # BBUPDATE
+        ttk.Label(bb_type_frame, text="Type:",                        # BBUPDATE
+                  font=('', 8)).pack(side=tk.LEFT, padx=2)            # BBUPDATE
+        for _bb_val in ('noise', 'signal', 'artifact'):               # BBUPDATE
+            ttk.Radiobutton(bb_type_frame, text=_bb_val.capitalize(), # BBUPDATE
+                            variable=self.bb_type, value=_bb_val).pack(  # BBUPDATE
+                                side=tk.LEFT, padx=2)                 # BBUPDATE
+
+        bb_save_frame = ttk.Frame(self.control_panel)                 # BBUPDATE
+        bb_save_frame.pack(fill=tk.X, pady=2)                         # BBUPDATE
+        ttk.Label(bb_save_frame, text="Save to:",                    # BBUPDATE
+                  font=('', 8)).pack(side=tk.LEFT, padx=2)           # BBUPDATE
+        ttk.Radiobutton(bb_save_frame, text="Codebase",              # BBUPDATE
+                        variable=self.bb_save_target,                # BBUPDATE
+                        value='codebase').pack(side=tk.LEFT, padx=2) # BBUPDATE
+        ttk.Radiobutton(bb_save_frame, text="Daily Dir",             # BBUPDATE
+                        variable=self.bb_save_target,                # BBUPDATE
+                        value='daily').pack(side=tk.LEFT, padx=2)    # BBUPDATE
+
+        bb_btn_frame = ttk.Frame(self.control_panel)                 # BBUPDATE
+        bb_btn_frame.pack(fill=tk.X, pady=2)                         # BBUPDATE
+        ttk.Button(bb_btn_frame, text="Clear Boxes",                 # BBUPDATE
+                   command=self.clear_bounding_boxes,                # BBUPDATE
+                   width=12).pack(side=tk.LEFT, padx=2)              # BBUPDATE
+        ttk.Button(bb_btn_frame, text="Save Boxes",                  # BBUPDATE
+                   command=self.save_bounding_boxes,                 # BBUPDATE
+                   width=12).pack(side=tk.LEFT, padx=2)              # BBUPDATE
+
+        self.bb_count_label = ttk.Label(self.control_panel,          # BBUPDATE
+            text="Boxes this session: 0", font=('', 8))              # BBUPDATE
+        self.bb_count_label.pack(anchor=tk.W, pady=2)                # BBUPDATE
+
+        ttk.Separator(self.control_panel,                            # BBUPDATE
+                      orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)  # BBUPDATE
+
+
+
+
+
+
         # (つ -' _ '- )つ    (つ -' _ '- )つ
         # STATISTICS
         # (つ -' _ '- )つ    (つ -' _ '- )つ
@@ -490,6 +548,40 @@ class ChangepointAnnotator(BaseLayer):
             logger.info("Contour complete (%d total)", len(self.contours))
 
         return True
+
+
+
+
+    # BBUPDATE
+    def on_bounding_box_selected(self, t_min, t_max, f_min, f_max):
+        """Append a drag-selected bounding box to the session list.
+
+        Called by interaction.on_release when a drag commits. Coordinates
+        arrive pre-sorted (t_min < t_max, f_min < f_max). All four TF
+        coords are always stored — frequency bounds are never omitted.
+        """
+        box = {
+            'id':         f"bb{len(self.bounding_boxes)}",
+            'audio_file': str(self.audio_files[self.current_file_idx])
+                          if self.audio_files else "",
+            'type':       self.bb_type.get(),
+            't_min':      float(t_min),
+            't_max':      float(t_max),
+            'f_min':      float(f_min),
+            'f_max':      float(f_max),
+            'label':      "",
+        }
+        self.bounding_boxes.append(box)
+        self.changes_made = True
+        self._update_bb_count()
+        self.update_display(recompute_spec=False)
+
+
+
+
+
+
+
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # ANNOTATION REBUILD
@@ -1171,9 +1263,15 @@ class ChangepointAnnotator(BaseLayer):
                                      color=harmonic['color'],
                                      linewidth=2, alpha=0.6)
 
+        
+        # BBUPDATE — draw committed bounding boxes
+        self._draw_bounding_boxes()
+
         # Shared point annotations
         from yaaat.core.visualization import draw_shared_point_annotations
         draw_shared_point_annotations(self)
+
+
 
     def _draw_shape(self, t_min, t_max, f_min, f_max,
                     color, linewidth, alpha):
@@ -1201,6 +1299,30 @@ class ChangepointAnnotator(BaseLayer):
                 pts, closed=True,
                 fill=False, edgecolor=color,
                 linewidth=linewidth, alpha=alpha, zorder=11))
+
+
+
+    # BBUPDATE
+    def _draw_bounding_boxes(self):
+        """Draw committed bounding boxes for the current file only.
+
+        Boxes from other files in the session are kept in the list but
+        not drawn — filtered by audio_file path match.
+        """
+        if not self.bounding_boxes or not self.audio_files:
+            return
+        current = str(self.audio_files[self.current_file_idx])
+        _bb_colors = {'noise': 'red', 'signal': 'lime', 'artifact': 'orange'}
+        for box in self.bounding_boxes:
+            if box['audio_file'] != current:
+                continue
+            color = _bb_colors.get(box['type'], 'white')
+            self.ax.add_patch(plt.Rectangle(
+                (box['t_min'], box['f_min']),
+                box['t_max'] - box['t_min'],
+                box['f_max'] - box['f_min'],
+                fill=False, edgecolor=color, linewidth=2,
+                linestyle='-', alpha=0.8, zorder=12))
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # GUIDE TOGGLE HELPERS
@@ -1501,6 +1623,78 @@ class ChangepointAnnotator(BaseLayer):
             self.rebuild_annotations()
             logger.info("Loaded %d contours from %s",
                         len(self.contours), path.name)
+
+
+
+
+
+
+
+    # BBUPDATE
+    def _update_bb_count(self):
+        """Refresh the session box-count label."""
+        if hasattr(self, 'bb_count_label'):
+            self.bb_count_label.config(
+                text=f"Boxes this session: {len(self.bounding_boxes)}")
+
+    # BBUPDATE
+    def clear_bounding_boxes(self):
+        """Clear all session bounding boxes after confirmation."""
+        if not self.bounding_boxes:
+            return
+        if messagebox.askyesno("Clear Boxes",
+                               "Remove all bounding boxes this session?"):
+            self.bounding_boxes = []
+            self.changes_made   = True
+            self._update_bb_count()
+            self.update_display(recompute_spec=False)
+
+    # BBUPDATE
+    def save_bounding_boxes(self):
+        """Write session bounding boxes to bounding_box.json.
+
+        Single-file scope — all boxes across navigated files in one JSON.
+        Target dir from bb_save_target: 'codebase' -> annotation_dir,
+        'daily' -> make_daily_directory(). Overwrites, not merge-write,
+        since the in-memory list is the full session state.
+        """
+        if not self.bounding_boxes:
+            messagebox.showinfo("No Boxes", "No bounding boxes to save")
+            return
+
+        if self.bb_save_target.get() == 'daily':
+            # daily_dir target — visual/session-scoped output
+            from jellyfish.utils.jelly_funcs import make_daily_directory
+            out_dir = make_daily_directory()
+        else:
+            # codebase target — shippable training-label data (default)
+            if self.annotation_dir is None:
+                messagebox.showwarning(
+                    "No Annotation Dir",
+                    "Load an audio directory first")
+                return
+            out_dir = Path(self.annotation_dir)
+
+        out_dir = Path(out_dir)                          # BBUPDATE
+        out_dir.mkdir(parents=True, exist_ok=True)       # BBUPDATE — create target if missing
+
+        out_path = out_dir / "bounding_box.json"
+        with open(out_path, 'w') as f:
+            json.dump({'boxes': self.bounding_boxes}, f, indent=2)
+
+        self.changes_made = False
+        logger.info("Saved %d bounding boxes to %s",
+                    len(self.bounding_boxes), out_path)
+        messagebox.showinfo("Saved",
+                            f"{len(self.bounding_boxes)} boxes → {out_path.name}")
+
+
+
+
+
+
+
+
 
     ##    <(''<)  <( ' ' )>  (>'')>
     # NAVIGATION OVERRIDES

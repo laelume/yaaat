@@ -14,12 +14,12 @@ from yaaat.tabs.base_annotator        import BaseAnnotator
 from yaaat.tabs.changepoint_annotator import ChangepointAnnotator
 from yaaat.tabs.peak_annotator        import PeakAnnotator
 from yaaat.tabs.harmonic_annotator    import HarmonicAnnotator
-from yaaat.tabs.binary_annotator      import BinaryAnnotator
+from yaaat.tabs.batch_annotator      import BatchAnnotator
 
 __all__ = [
     "BaseAnnotator",
     "ChangepointAnnotator",
     "PeakAnnotator",
     "HarmonicAnnotator",
-    "BinaryAnnotator",
+    "BatchAnnotator",
 ]

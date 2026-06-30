@@ -5,15 +5,24 @@ Standalone mouse and scroll event handling for YAAAT annotator tabs.
 All functions receive the layer instance explicitly — no inheritance required.
 
 Responsibilities:
-    - Mouse press: right-click zoom undo, subclass hook, left-click drag init
-    - Mouse motion: zoom rectangle preview, subclass hook
-    - Mouse release: zoom commit or click passthrough, subclass hook
+    - Mouse press: right-click zoom undo, subclass hook, left-click bounding box-select init
+    - Mouse motion: bounding box preview, subclass hook
+    - Mouse release: bounding box commit or click passthrough, subclass hook
     - Scroll: horizontal zoom, vertical zoom, horizontal pan, vertical pan
       Modifier key detection is Windows-native via ctypes; falls back to
       matplotlib event.key for other platforms.
 
-Zoom rectangle drawn as a dashed yellow Rectangle patch during drag.
-Zoom stack stores (xlim, ylim) tuples for sequential undo via right-click.
+# bounding box drawn as a dashed yellow Rectangle patch during drag.
+# Zoom stack stores (xlim, ylim) tuples for sequential undo via right-click.
+
+Plain left-drag selects a time-frequency bounding box, committed on release
+via layer.on_bounding_box_selected(t_min, t_max, f_min, f_max). interaction.py
+performs no file I/O — the tab owns persistence. Zoom is no longer bound to
+drag; it lives exclusively in scroll + modifiers (see on_scroll).
+
+Selection box drawn as a solid cyan Rectangle patch during drag.
+Zoom stack stores (xlim, ylim) tuples for sequential undo via right-click,
+fed by scroll-zoom only.
 
 All functions operate on:
     layer.ax              : matplotlib Axes
@@ -21,7 +30,7 @@ All functions operate on:
     layer.drag_start      : (x, y) tuple or None
     layer.drag_rect       : matplotlib Rectangle patch or None
     layer.zoom_stack      : list of (xlim, ylim) tuples
-    layer.zoom_info_label : ttk.Label displaying drag region dimensions
+    layer.zoom_info_label : ttk.Label displaying bbox dimensions
 """
 
 import sys
@@ -38,8 +47,8 @@ logger = logging.getLogger(__name__)
 # ZOOM THRESHOLDS — prevent accidental micro-zooms
 # (つ -' _ '- )つ    (つ -' _ '- )つ
 
-_MIN_ZOOM_TIME_S  = 0.01   # seconds — minimum x-range for a valid zoom region
-_MIN_ZOOM_FREQ_HZ = 10.0   # Hz      — minimum y-range for a valid zoom region
+_MIN_BBOX_TIME_S  = 0.01   # seconds — minimum x-range for a valid bbox region
+_MIN_BBOX_FREQ_HZ = 10.0   # Hz      — minimum y-range for a valid bbox region
 _CLICK_THRESHOLD  = 0.05   # normalized drag distance below which release = click
 
 # Zoom in/out factors for scroll events
@@ -61,7 +70,7 @@ def on_press(layer, event):
         1. Ignore clicks outside the spectrogram axes.
         2. Right-click: pop zoom stack and restore previous view.
         3. Subclass hook: layer.on_custom_press(event) — consumed if returns True.
-        4. Left-click: record drag_start for zoom rectangle.
+        4. Left-click: record drag_start for bounding box.
 
     Args:
         layer: BaseLayer instance
@@ -83,7 +92,7 @@ def on_press(layer, event):
     if layer.on_custom_press(event):
         return
 
-    # Left-click — begin drag for zoom rectangle
+    # Left-click — begin drag for bounding box
     if event.button == 1:
         layer.drag_start = (event.xdata, event.ydata)
 
@@ -93,13 +102,13 @@ def on_press(layer, event):
 ##    <(''<)  <( ' ' )>  (>'')>
 
 def on_motion(layer, event):
-    """Handle mouse motion during drag to draw the zoom rectangle preview.
+    """Handle mouse motion during drag to draw the bounding box preview.
 
     Dispatch order:
         1. Ignore motion outside axes.
         2. Subclass hook: layer.on_custom_motion(event) — consumed if returns True.
-        3. Draw or update the dashed yellow zoom rectangle.
-        4. Update zoom_info_label with current drag region dimensions.
+        3. Draw or update the bounding box line.
+        4. Update zoom_info_label with current bbox dimensions.
 
     Args:
         layer: BaseLayer instance
@@ -124,10 +133,18 @@ def on_motion(layer, event):
     width  = event.xdata - x0
     height = event.ydata - y0
 
+    # layer.drag_rect = layer.ax.add_patch(
+    #     plt.Rectangle(
+    #         (x0, y0), width, height,
+    #         fill=False, edgecolor='yellow', linewidth=2, linestyle='--'
+    #     )
+    # )
+    # Adding bounding box region support
+    # Solid cyan box = region selection (was dashed yellow = zoom)
     layer.drag_rect = layer.ax.add_patch(
         plt.Rectangle(
             (x0, y0), width, height,
-            fill=False, edgecolor='yellow', linewidth=2, linestyle='--'
+            fill=False, edgecolor='cyan', linewidth=2, linestyle='-'
         )
     )
 
@@ -144,7 +161,7 @@ def on_motion(layer, event):
 ##    <(''<)  <( ' ' )>  (>'')>
 
 def on_release(layer, event):
-    """Handle mouse button release — commit zoom or pass through as click.
+    """Handle mouse button release — commit bounding box or pass through as click.
 
     Dispatch order:
         1. Subclass hook: layer.on_custom_release(event) — consumed if returns True.
@@ -152,8 +169,8 @@ def on_release(layer, event):
         2. Guard: ignore if drag_start is None.
         3. Guard: if release is outside axes, clean up and return.
         4. If drag distance < _CLICK_THRESHOLD: treat as click, clear drag state.
-        5. If drag region too small (< _MIN_ZOOM thresholds): ignore.
-        6. Otherwise: push current limits onto zoom_stack, apply new limits.
+        5. If bbox too small (< _MIN_BBOX thresholds): ignore.
+        # deprecated 6. Otherwise: push current limits onto zoom_stack, apply new limits.
 
     Args:
         layer: BaseLayer instance
@@ -187,25 +204,47 @@ def on_release(layer, event):
             layer.zoom_info_label.config(text="")
             return
 
-        new_xlim = sorted([x0, x1])
-        new_ylim = sorted([y0, y1])
+        # new_xlim = sorted([x0, x1])
+        # new_ylim = sorted([y0, y1])
 
-        x_range = new_xlim[1] - new_xlim[0]
-        y_range = new_ylim[1] - new_ylim[0]
+        # x_range = new_xlim[1] - new_xlim[0]
+        # y_range = new_ylim[1] - new_ylim[0]
 
-        # Reject micro-zooms
-        if x_range < _MIN_ZOOM_TIME_S or y_range < _MIN_ZOOM_FREQ_HZ:
+        # # Reject micro-zooms
+        # if x_range < _MIN_BBOX_TIME_S or y_range < _MIN_BBOX_FREQ_HZ:
+        #     layer.zoom_info_label.config(text="")
+        #     return
+
+        # # Push current view onto stack before applying new limits
+        # layer.zoom_stack.append((layer.ax.get_xlim(), layer.ax.get_ylim()))
+
+        # layer.ax.set_xlim(new_xlim)
+        # layer.ax.set_ylim(new_ylim)
+        # layer.canvas.draw_idle()
+
+        # layer.zoom_info_label.config(text="")
+
+        # Modified boundaries for bounding box time-frequency regions
+        t_min, t_max = sorted([x0, x1])
+        f_min, f_max = sorted([y0, y1])
+
+        t_range = t_max - t_min
+        f_range = f_max - f_min
+
+        # Reject micro-boxes — same thresholds that guarded micro-zooms
+        if t_range < _MIN_BBOX_TIME_S or f_range < _MIN_BBOX_FREQ_HZ:
             layer.zoom_info_label.config(text="")
             return
 
-        # Push current view onto stack before applying new limits
-        layer.zoom_stack.append((layer.ax.get_xlim(), layer.ax.get_ylim()))
-
-        layer.ax.set_xlim(new_xlim)
-        layer.ax.set_ylim(new_ylim)
-        layer.canvas.draw_idle()
+        # Commit bbox to the tab via hook.
+        # interaction.py does no file I/O — tab owns persistence.
+        # Coordinates pre-sorted: t_min < t_max, f_min < f_max.
+        layer.on_bounding_box_selected(t_min, t_max, f_min, f_max)
 
         layer.zoom_info_label.config(text="")
+
+
+
 
     except Exception as e:
         logger.error("ERROR in on_release: %s", e)
@@ -300,7 +339,7 @@ def on_scroll(layer, event):
 ##    <(''<)  <( ' ' )>  (>'')>
 
 def _clear_drag(layer):
-    """Remove the zoom rectangle patch and reset drag state.
+    """Remove the bounding box patch and reset drag state.
 
     Safe to call even if drag_rect is None or already removed.
 
