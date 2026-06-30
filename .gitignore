@@ -10,3 +10,13 @@
 
 .DS_Store
 Thumbs.db
+
+OMIT.txt
+cherry-commit.py
+
+/layers/contour_layer.py
+/layers/binary_annotation_layer.py
+
+/contours/processing.py
+/contours/config.py
+/contours/algorithms.py

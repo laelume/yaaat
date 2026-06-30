@@ -3,3 +3,7 @@ matplotlib
 scipy
 natsort
 pysoniq
+<<<<<<< HEAD
+=======
+scikit-image
+>>>>>>> origin/dev

@@ -23,6 +23,7 @@ from pathlib import Path
 #     from .layers.harmonic_layer import HarmonicLayer
 
 # Script mode: python main.py
+<<<<<<< HEAD
 from tabs.changepoint_annotator import ChangepointAnnotator
 from tabs.peak_annotator import PeakAnnotator
 from tabs.harmonic_annotator import HarmonicAnnotator
@@ -30,6 +31,16 @@ from tabs.sequence_annotator import SequenceAnnotator
 from layers.base_layer import BaseLayer
 from layers.harmonic_layer import HarmonicLayer
 
+=======
+from .tabs.changepoint_annotator import ChangepointAnnotator
+from .tabs.peak_annotator import PeakAnnotator
+from .tabs.harmonic_annotator import HarmonicAnnotator
+from .tabs.sequence_annotator import SequenceAnnotator
+from .layers.base_layer import BaseLayer
+from .layers.harmonic_layer import HarmonicLayer
+from .layers.contour_layer import ContourLayer
+from .layers.binary_annotation_layer import BinaryAnnotationLayer
+>>>>>>> origin/dev
 
 class YAAATApp:
     """Main YAAAT application with tabbed interface"""
@@ -53,6 +64,11 @@ class YAAATApp:
         sequence_frame = ttk.Frame(self.notebook)
         base_frame = ttk.Frame(self.notebook)
         harmonic_layer_frame = ttk.Frame(self.notebook)
+<<<<<<< HEAD
+=======
+        contour_layer_frame = ttk.Frame(self.notebook)
+        binary_annotation_layer_frame = ttk.Frame(self.notebook)
+>>>>>>> origin/dev
         
         # Add tabs
         self.notebook.add(changepoint_frame, text="Changepoint Annotator")
@@ -61,6 +77,11 @@ class YAAATApp:
         self.notebook.add(sequence_frame, text="Sequence Annotator")
         self.notebook.add(base_frame, text="Base Layer")
         self.notebook.add(harmonic_layer_frame, text="Harmonic Layer")
+<<<<<<< HEAD
+=======
+        self.notebook.add(contour_layer_frame, text="Contour Layer")
+        self.notebook.add(binary_annotation_layer_frame, text="Binary Annotation Layer")
+>>>>>>> origin/dev
 
         # Initialize tools (pass frames as parent)
         self.changepoint_tool = ChangepointAnnotator(changepoint_frame)
@@ -69,9 +90,17 @@ class YAAATApp:
         self.sequence_tool = SequenceAnnotator(sequence_frame)
         self.base_tool = BaseLayer(base_frame)
         self.harmonic_layer_tool = HarmonicLayer(harmonic_layer_frame)
+<<<<<<< HEAD
         
         # Share audio files across all tabs
         self.tools = [self.changepoint_tool, self.peak_tool, self.harmonic_tool, self.sequence_tool, self.base_tool, self.harmonic_layer_tool]
+=======
+        self.contour_layer_tool = ContourLayer(contour_layer_frame)
+        self.binary_annotation_layer_tool = BinaryAnnotationLayer(binary_annotation_layer_frame)
+
+        # Share audio files across all tabs
+        self.tools = [self.changepoint_tool, self.peak_tool, self.harmonic_tool, self.sequence_tool, self.base_tool, self.harmonic_layer_tool, self.contour_layer_tool, self.binary_annotation_layer_tool]
+>>>>>>> origin/dev
         
         # Bind tab change event
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
@@ -96,6 +125,7 @@ class YAAATApp:
             if hasattr(tool, 'save_dir_button'):
                 tool.save_dir_button.config(text=f"📁 {tool.annotation_dir}")
             
+<<<<<<< HEAD
             # # Load the current file in the tool
             # if tool.audio_files:
             #     tool.load_current_file()
@@ -107,6 +137,26 @@ class YAAATApp:
                 # Keep existing in-memory annotations (harmonics, contours, etc.)
                 tool.update_display(recompute_spec=False)
                 
+=======
+            # Check if audio is loaded - handle different tool types
+            has_audio = False
+            if hasattr(tool, 'y') and tool.y is not None:
+                has_audio = True
+            elif hasattr(tool, 'tracker') and tool.tracker is not None:
+                has_audio = True
+                
+            # # Load the current file in the tool
+            # Only reload if file index changed or no audio loaded
+            if tool.current_file_idx != source_tool.current_file_idx or not has_audio:
+                tool._skip_reload = False
+                tool.load_current_file()
+            else:
+                # Mark to skip full reload and just update display
+                tool._skip_reload = True
+                if hasattr(tool, 'update_display'):
+                    tool.update_display(recompute_spec=False)
+                tool._skip_reload = False
+>>>>>>> origin/dev
 
     def on_tab_change(self, event):
         """Handle tab switching - sync audio state"""

@@ -1,0 +1,16 @@
+- Compute on load tab for the heavy lifting algorithms (especially harmonic calculation)
+- Implement Birdnet etc as base classifier annotators 
+- Add support for long-form audio (sequences)
+- Add algorithmic syllable chopping to interface with ecoacoustic softwares (avianz et alia)
+- Design annotation architecture for syllable lookup tables, how to handle audio? Navigate by annotation bounds. 
+- Add flag to command line so that you can specify audio file directory at cmd level (prefents long loads) 
+- Add support for avianz api
+- Fix WARNING: update_progress called before widget ready in BinaryAnnotationLayer
+- Add a secondary time bar on the x-axis to show seconds as well as minutes or prehaps HMS
+- Add support to load from single audio file button only in stead of just entire directory
+- Maybe on load downsample for speed, then on first interaction switch to actual sample rate??
+- Add support for normalization (different types), SNR compuation, denoising, noise labeling, and compression thresholding. 
+- Add time bounds in addition to frequency bounds. 
+- If there is AT LEAST ONE CALL detected, then go in further to inspect that file. (hierarchy|sequence|subsequence|syllable classification|syntax)
+- Add tracing overlay such as 'trace manual annotation' to changepoint annotator view
+

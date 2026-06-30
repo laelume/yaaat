@@ -143,7 +143,11 @@ For marking temporal features in vocalizations: onsets, offsets, and rapid fluct
 
 ### Annotation Modes
 
+<<<<<<< HEAD
 **Contour Mode** (default)
+=======
+**Syllable Mode** (default)
+>>>>>>> origin/dev
 - Click points to define contour of a vocalization
 - Each contour = one syllable
 - Points define time-frequency trajectory
@@ -154,7 +158,11 @@ For marking temporal features in vocalizations: onsets, offsets, and rapid fluct
 
 Toggle modes via radio buttons in right panel.
 
+<<<<<<< HEAD
 ### Basic Workflow (Contour Mode)
+=======
+### Basic Workflow (Syllable Mode)
+>>>>>>> origin/dev
 
 1. **Click to add points** on spectrogram
    - Click along frequency contour of vocalization

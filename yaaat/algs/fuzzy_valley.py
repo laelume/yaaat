@@ -6,9 +6,15 @@ from scipy.signal import find_peaks, savgol_filter
 import pysoniq
 
 try:
+<<<<<<< HEAD
     from yaaat import utils
 except ImportError:
     import utils
+=======
+    from yaaat import audio_utils
+except ImportError:
+    import audio_utils
+>>>>>>> origin/dev
 
 # ============================================================================
 # FUZZY VALLEY BACKEND
@@ -27,7 +33,11 @@ class FuzzyValley:
         
     def load_audio(self, filepath, sr=None):
         """Load audio file"""
+<<<<<<< HEAD
         self.y, self.sr = pysoniq.load(str(filepath))
+=======
+        self.y, self.sr = pysoniq.load_audio(str(filepath))
+>>>>>>> origin/dev
         if self.y.ndim > 1:
             self.y = np.mean(self.y, axis=1)
         return self.y, self.sr
@@ -291,7 +301,24 @@ class FuzzyValley:
                 search_start_idx = np.searchsorted(self.freqs, search_start_freq)
                 search_end_idx = np.searchsorted(self.freqs, search_end_freq)
                 
+<<<<<<< HEAD
                 valley_spectrum = self.log_magnitude[search_start_idx:search_end_idx, t_idx]
+=======
+                if search_end_idx <= search_start_idx:
+                    print(f"WARNING: empty valley window for {pair_key} at t={frame_data['time']:.3f}s "
+                        f"search={search_start_freq:.1f}-{search_end_freq:.1f}Hz "
+                        f"idx={search_start_idx}-{search_end_idx} "
+                        f"freq_res={self.freqs[1]-self.freqs[0]:.1f}Hz/bin")
+                    continue
+
+                valley_spectrum = self.log_magnitude[search_start_idx:search_end_idx, t_idx]
+
+                if len(valley_spectrum) == 0:
+                    print(f"WARNING: empty valley_spectrum for {pair_key} at t={frame_data['time']:.3f}s")
+                    continue
+
+
+>>>>>>> origin/dev
                 valley_local_idx = np.argmin(valley_spectrum)
                 valley_freq_idx = search_start_idx + valley_local_idx
                 

@@ -1,5 +1,9 @@
 # Remember to implement this at some point
+<<<<<<< HEAD
 # from jellyfish.utils.jelly_funcs import make_daily_directory
+=======
+# from jellyfish.audio_utils.jelly_funcs import make_daily_directory
+>>>>>>> origin/dev
 # daily_dir = make_daily_directory()
 
 import os
@@ -21,6 +25,7 @@ from scipy.signal import spectrogram, welch, find_peaks
 
 import pysoniq
 
+<<<<<<< HEAD
 # try: 
 #     from yaaat import utils
 # except ImportError:
@@ -28,6 +33,14 @@ import pysoniq
 #     import utils
 
 from utils import utils 
+=======
+try:
+    from yaaat import audio_utils
+except ImportError:
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import audio_utils
+>>>>>>> origin/dev
 
 class PeakAnnotator:
     """Interactive tool for annotating spectral peaks on dual-resolution spectrogram+PSD display"""
@@ -791,7 +804,11 @@ class PeakAnnotator:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} files")
+<<<<<<< HEAD
         utils.save_last_directory(self.base_audio_dir)
+=======
+        audio_utils.save_last_directory(self.base_audio_dir)
+>>>>>>> origin/dev
 
 
     def load_test_audio(self):
@@ -836,7 +853,11 @@ class PeakAnnotator:
     def auto_load_directory(self):
         """Auto-load last directory or default test audio on startup"""
         # Try last opened directory first
+<<<<<<< HEAD
         last_dir = utils.load_last_directory()
+=======
+        last_dir = audio_utils.load_last_directory()
+>>>>>>> origin/dev
         if last_dir and last_dir.exists():
             print(f"Auto-loading last directory: {last_dir}")
             # Simulate loading without dialog
@@ -866,7 +887,11 @@ class PeakAnnotator:
         print(f"Loading {audio_file.name}...")
         
         # Load audio using pysoniq
+<<<<<<< HEAD
         self.y, self.sr = pysoniq.load(str(audio_file))
+=======
+        self.y, self.sr = pysoniq.load_audio(str(audio_file))
+>>>>>>> origin/dev
         if self.y.ndim > 1:
             self.y = np.mean(self.y, axis=1)  # Convert to mono
         
@@ -911,7 +936,11 @@ class PeakAnnotator:
             return
         
         # Compute vertical spectrogram using unified function
+<<<<<<< HEAD
         self.S_db, self.freqs, self.times = utils.compute_spectrogram_unified(
+=======
+        self.S_db, self.freqs, self.times = audio_utils.compute_spectrogram_unified(
+>>>>>>> origin/dev
             self.y, 
             self.sr, 
             nfft=self.n_fft_spect.get(),
@@ -923,7 +952,11 @@ class PeakAnnotator:
         )
         
         # Compute PSD (high frequency resolution)
+<<<<<<< HEAD
         self.pfreqs, self.ppsd = utils.compute_psd(
+=======
+        self.pfreqs, self.ppsd = audio_utils.compute_psd(
+>>>>>>> origin/dev
             self.y, 
             self.sr,
             nfft_psd=self.n_fft_psd.get(),

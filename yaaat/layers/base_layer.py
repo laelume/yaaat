@@ -19,6 +19,7 @@ from natsort import natsorted
 
 import pysoniq
 
+<<<<<<< HEAD
 # try: 
 #     from yaaat import utils
 # except ImportError: 
@@ -26,6 +27,14 @@ import pysoniq
 #     import utils
 
 from utils import utils 
+=======
+try:
+    from yaaat import audio_utils
+except ImportError:
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import audio_utils
+>>>>>>> origin/dev
 
 class BaseLayer:
     """Base class for audio annotation tools
@@ -68,7 +77,11 @@ class BaseLayer:
         # STFT/Spectrogram parameters
         self.n_fft = tk.IntVar(value=256)
         self.hop_length = tk.IntVar(value=64)
+<<<<<<< HEAD
         self.fmin_calc = tk.IntVar(value=400)
+=======
+        self.fmin_calc = tk.IntVar(value=500)
+>>>>>>> origin/dev
         self.fmax_calc = tk.IntVar(value=16000)
         self.y_scale = tk.StringVar(value='linear')
         
@@ -103,7 +116,11 @@ class BaseLayer:
         self.repeat_id = None
         
         self.setup_ui()
+<<<<<<< HEAD
         self.root.after(100, self.auto_load_directory)
+=======
+        self.root.after(222, self.auto_load_directory)
+>>>>>>> origin/dev
 
 
 
@@ -448,7 +465,11 @@ class BaseLayer:
         
         print(f"✓ Loaded {len(self.audio_files)} files")
         print(f"Annotations will be saved to: {self.annotation_dir}")
+<<<<<<< HEAD
         utils.save_last_directory(self.base_audio_dir)
+=======
+        audio_utils.save_last_directory(self.base_audio_dir)
+>>>>>>> origin/dev
     
     def load_test_audio(self):
         """Load bundled test audio files"""
@@ -474,11 +495,19 @@ class BaseLayer:
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} test files")
+<<<<<<< HEAD
         utils.save_last_directory(self.base_audio_dir)
     
     def auto_load_directory(self):
         """Auto-load last directory on startup"""
         last_dir = utils.load_last_directory()
+=======
+        audio_utils.save_last_directory(self.base_audio_dir)
+    
+    def auto_load_directory(self):
+        """Auto-load last directory on startup"""
+        last_dir = audio_utils.load_last_directory()
+>>>>>>> origin/dev
         if last_dir and last_dir.exists():
             print(f"Auto-loading: {last_dir}")
             self.audio_files = natsorted(last_dir.rglob('*.wav'))
@@ -513,7 +542,11 @@ class BaseLayer:
             return
 
         # Load audio
+<<<<<<< HEAD
         self.y, self.sr = pysoniq.load(str(audio_file))
+=======
+        self.y, self.sr = pysoniq.load_audio(str(audio_file))
+>>>>>>> origin/dev
         if self.y.ndim > 1:
             self.y = np.mean(self.y, axis=1)
         
@@ -579,7 +612,11 @@ class BaseLayer:
     
     def compute_spectrogram(self):
         """Compute spectrogram with current parameters"""
+<<<<<<< HEAD
         self.S_db, self.freqs, self.times = utils.compute_spectrogram_unified(
+=======
+        self.S_db, self.freqs, self.times = audio_utils.compute_spectrogram_unified(
+>>>>>>> origin/dev
             self.y, 
             self.sr,
             nfft=self.n_fft.get(),
@@ -593,6 +630,10 @@ class BaseLayer:
     
     def change_nfft(self, new_nfft):
         """Change n_fft and recompute"""
+<<<<<<< HEAD
+=======
+        self.grid_spectrograms.clear()
+>>>>>>> origin/dev
         self.n_fft.set(new_nfft)
         self.update_button_highlights()
         if self.y is not None:
@@ -600,6 +641,10 @@ class BaseLayer:
     
     def change_hop(self, new_hop):
         """Change hop_length and recompute"""
+<<<<<<< HEAD
+=======
+        self.grid_spectrograms.clear()
+>>>>>>> origin/dev
         self.hop_length.set(new_hop)
         self.update_button_highlights()
         if self.y is not None:
@@ -675,7 +720,11 @@ class BaseLayer:
     def _convert_ylim_to_scale(self, fmin_hz, fmax_hz):
         """Convert Hz limits to current scale"""
         if self.y_scale.get() == 'mel':
+<<<<<<< HEAD
             return utils.hz_to_mel(fmin_hz), utils.hz_to_mel(fmax_hz)
+=======
+            return audio_utils.hz_to_mel(fmin_hz), audio_utils.hz_to_mel(fmax_hz)
+>>>>>>> origin/dev
         else:
             return fmin_hz, fmax_hz
 
@@ -805,6 +854,7 @@ class BaseLayer:
                 except Exception:
                     pass
                 self.waveform_ax = None
+<<<<<<< HEAD
 
             # Update title
             filename = self.audio_files[self.current_file_idx].name
@@ -812,6 +862,17 @@ class BaseLayer:
             self.ax.set_title(f'{save_marker}{filename} | n_fft={self.n_fft.get()} hop={self.hop_length.get()}', 
                             fontsize=9)
             
+=======
+            
+            # Update title to reflect current save state
+            audio_file = self.audio_files[self.current_file_idx]
+            filename = audio_file.name
+            parent_dir = audio_file.parent.name 
+            grandparent_dir = audio_file.parent.parent.name
+
+            save_marker = "" if self.changes_made else "✓ "
+            self.ax.set_title(f'{save_marker} {grandparent_dir} | {parent_dir} | {filename} | n_fft={self.n_fft.get()} hop={self.hop_length.get()}', fontsize=9)
+>>>>>>> origin/dev
             self.canvas.draw()
             
         except Exception as e:
@@ -1221,6 +1282,12 @@ class BaseLayer:
     
     def update_progress(self):
         """Update file progress"""
+<<<<<<< HEAD
+=======
+        if not self.file_number_entry.winfo_exists():
+            print(f"WARNING: update_progress called before widget ready in {self.__class__.__name__}")
+            return
+>>>>>>> origin/dev
         self.file_number_entry.delete(0, tk.END)
         self.file_number_entry.insert(0, str(self.current_file_idx + 1))
         self.file_total_label.config(text=f"/ {len(self.audio_files)}")

@@ -1,14 +1,11 @@
 # YAAAT! Yet Another Audio Annotation Tool
 
 Interactive bioacoustic annotation tool for measuring vocalizations. 
-###### (If YAAAT is useful in your work, please ⭐ the repository or open an issue with feedback !!!)
-
 
 Features: 
 1. Changepoint Annotator, for marking temporal onset, offset, and changepoints in vocalizations. Useful for describing rapid fluctuations and identifying nonlinear phenomena. 
 2. Peak Annotator, for marking dominant frequency peaks on the power spectrum. Useful for describing spectrally complex vocalizations. 
 3. Harmonic Annotator, for identifying harmonics. 
-
 
 <table>
   <tr>
@@ -34,7 +31,7 @@ pip install yaaat
 ```bash
 git clone https://github.com/laelume/yaaat.git
 cd yaaat
-pip install -e .
+pip install -e . | yaaat `OR` pip install -r requirements.txt | python -m yaaat
 ```
 
 ## Usage
@@ -43,7 +40,13 @@ pip install -e .
 ```bash
 yaaat
 ```
-Opens a tabbed interface with various annotators. Includes test audio files to get started. For some reason, auto-load is a little buggy, so clicking **Load Audio Files** and selecting the included test_audio yourself lets the interface work as-intended. 
+
+### Or navigate to the correct directory and execute via: 
+```bash
+cd yaaat | python -m yaaat
+```
+
+Opens a tabbed interface with various annotators. Includes test audio files to get started. Sometimes auto-load is a little buggy, so clicking **Load Audio Files** and selecting the included test_audio, or your own audio files, lets the interface work as-intended. 
 
 ### Use Individual Annotators
 ```bash
@@ -96,8 +99,6 @@ root.mainloop()
 - Table updates immediately after modifications
 - Better error handling and user feedback
 
-
-
 ## Requirements
 
 - Python ≥3.8 (built using 3.11)
@@ -109,8 +110,8 @@ root.mainloop()
 
 ## License
 
-MIT License - Copyright (c) 2025 laelume
+MIT License - Copyright (c) 2025-2026 laelume
 
 ## Contributing
 
-Contributions welcome! Please open an issue or submit a pull request. I'm especially interested in talking to people about using this in their existing AI workflows, so please feel free to reach out !!
+Contributions welcome! Please open an issue or submit a pull request. 

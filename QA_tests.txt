@@ -1,0 +1,61 @@
+1.  cd yaaat
+2.  conda activate yaaat-env
+3.  python -m yaaat
+
+-- startup --
+4.  verify no import errors in console
+5.  verify no DEBUG spam in console
+6.  verify auto-load of last directory
+
+-- navigation --
+7.  next/prev file navigation
+8.  jump-to-file by number
+9.  verify file label updates correctly
+
+-- spectrogram --
+10. verify spectrogram renders on load
+11. change n_fft — verify recompute
+12. change hop — verify recompute
+13. toggle linear/mel scale
+14. adjust frequency display range
+15. verify zoom via click-drag
+16. verify zoom undo via right-click
+17. verify scroll zoom and pan
+18. verify reset zoom
+19. toggle waveform overlay
+20. adjust waveform transparency
+
+-- playback --
+21. play, pause, resume, stop
+22. toggle loop
+23. adjust gain
+
+-- changepoint annotator --
+24. click to place points
+25. finish contour
+26. verify contour saved on next file navigation
+27. verify contour loads on return to file
+28. remove point via double-click
+
+-- peak annotator --
+29. verify peak detection runs on load
+30. verify peaks render as overlays
+31. adjust prominence threshold — verify recompute
+32. verify peak annotation save/load
+
+-- harmonic annotator --
+33. verify F0 detection on load
+34. verify harmonic series renders
+35. adjust frequency range — verify recompute
+36. verify harmonic annotation save/load
+
+-- binary annotator --
+37. verify tab loads without error
+38. place binary annotation
+39. verify save/load round-trip
+40. verify annotation does not bleed to other tabs
+
+-- cross-tab --
+41. switch between all tabs on same file
+42. verify audio state persists across tab switches
+43. verify annotation state does not bleed between tabs

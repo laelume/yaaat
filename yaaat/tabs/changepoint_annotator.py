@@ -1,8 +1,17 @@
+<<<<<<< HEAD
 # Remember to implement this at some point
 # from jellyfish.utils.jelly_funcs import make_daily_directory
 # daily_dir = make_daily_directory()
 
 
+=======
+# TODO: Remember to implement the daily directory at some point
+# from jellyfish.utils.jelly_funcs import make_daily_directory
+# daily_dir = make_daily_directory()
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+>>>>>>> origin/dev
 import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
@@ -10,10 +19,13 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.collections
+<<<<<<< HEAD
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+=======
+>>>>>>> origin/dev
 from pathlib import Path
 import json
 from natsort import natsorted
@@ -21,6 +33,7 @@ from natsort import natsorted
 import pysoniq
 
 # try: 
+<<<<<<< HEAD
 #     from yaaat import utils
 # except ImportError: 
 #     print("/utils subdir does not exist")
@@ -30,6 +43,23 @@ from utils import utils
 
 class ChangepointAnnotator:
     """Interactive tool for annotating time-frequency changepoints on spectrograms"""
+=======
+#     from yaaat import audio_utils
+# except ImportError: 
+#     print("/audio_utils import didn't work")
+#     import audio_utils
+
+try:
+    from yaaat import audio_utils          # package mode: python -m yaaat
+except ImportError:
+    try:
+        from yaaat.audio_utils import audio_utils    # alternate package import
+    except ImportError:
+        import audio_utils                     # script mode: python changepoint_annotator.py
+
+class ChangepointAnnotator:
+    """Interactive tool to annotate time-frequency changepoints on spectrograms for syllable segmentation"""
+>>>>>>> origin/dev
     
     def __init__(self, root):
         self.root = root
@@ -45,6 +75,7 @@ class ChangepointAnnotator:
         self.S_db = None
         self.freqs = None
         self.times = None
+<<<<<<< HEAD
         
         # Tracking audio units
         self.current_syllable = []  # Points in current syllable being built
@@ -59,17 +90,45 @@ class ChangepointAnnotator:
         self.hop_length = tk.IntVar(value=64)
         self.fmin_calc = tk.IntVar(value=400)
         self.fmax_calc = tk.IntVar(value=16000)
+=======
+
+        # STFT/Spectrogram parameters
+        self.n_fft = tk.IntVar(value=256)
+        self.hop_length = tk.IntVar(value=64)
+        self.fmin_calc = tk.IntVar(value=550)
+        self.fmax_calc = tk.IntVar(value=10000)
+>>>>>>> origin/dev
         self.y_scale = tk.StringVar(value='linear')
         
         # PSD parameters (for future use)
         self.n_fft_psd = tk.IntVar(value=2048)
         self.nperseg_psd = tk.IntVar(value=512)
+<<<<<<< HEAD
         self.fmin_psd = tk.IntVar(value=500)
         self.fmax_psd = tk.IntVar(value=16000)
         
         # Display/plotting limits
         self.fmin_display = tk.IntVar(value=500)
         self.fmax_display = tk.IntVar(value=8000)
+=======
+        self.fmin_psd = tk.IntVar(value=550)
+        self.fmax_psd = tk.IntVar(value=10000)
+        
+        # Display/plotting limits
+        self.fmin_display = tk.IntVar(value=550)
+        self.fmax_display = tk.IntVar(value=10000)
+
+        # Tracking audio units
+        self.current_contour = []  # Points in current contour being built
+        # self.syllables = []  #  Replaced nomenclature: changed SYLLABLES to CONTOURS
+        self.contours = []  # List of completed contour dicts (each contour is a list of points): {'points': [...], 'onset_idx': int, 'offset_idx': int}
+
+        # Annotation data (auto-generated from syllables (CONTOURS??))
+        self.annotations = []
+        self.changepoints = [] # Need to implement with downstream changepoint detection algorithm
+        
+
+>>>>>>> origin/dev
 
         # Playback state
         self.playback_gain = tk.DoubleVar(value=1.0)
@@ -96,7 +155,11 @@ class ChangepointAnnotator:
         self.spec_image = None
 
         # Track totals across all files
+<<<<<<< HEAD
         self.total_syllables_across_files = 0
+=======
+        self.total_contours_across_files = 0
+>>>>>>> origin/dev
         self.total_skipped_files = 0  
 
         self.harmonic_repeat_ids = {}  # Track repeat timers by harmonic index
@@ -110,8 +173,11 @@ class ChangepointAnnotator:
 
         # Annotation mode
         self.annotation_mode = tk.StringVar(value='contour')  # 'contour' or 'sequence'
+<<<<<<< HEAD
         self.contours = []  # List of completed contours (each contour is a list of points)
         self.current_contour = []  # Points in contour being built
+=======
+>>>>>>> origin/dev
 
         # Ctrl+Click onset/offset marking
         self.pending_onset_idx = None  # Track which point was marked as onset
@@ -121,7 +187,10 @@ class ChangepointAnnotator:
         self.lasso_points = []  # List of (x, y) vertices for polygon
         self.lasso_lines = []  # Visual feedback lines
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/dev
         self.setup_ui()
 
         # Auto-load last directory or default test audio
@@ -201,39 +270,64 @@ class ChangepointAnnotator:
         canvas.bind("<Leave>", unbind_mousewheel)
 
         # Control Panel
+<<<<<<< HEAD
         ttk.Label(scrollable_frame, text="Syllable Annotator", font=('', 10, 'bold')).pack(pady=(0, 2))
+=======
+        ttk.Label(scrollable_frame, text="Contour Annotator", font=('', 10, 'bold')).pack(pady=(0, 2))
+>>>>>>> origin/dev
         ttk.Label(scrollable_frame, text="Mark onset, offset and changepoints in vocalizations", wraplength=400, font=('', 8, 'italic')).pack(padx=5, pady=(0, 3))
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
         # Instructions
         ttk.Label(scrollable_frame, text="Instructions:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
+<<<<<<< HEAD
         instructions = ttk.Label(scrollable_frame, text="• Click: add point\n• Click near existing point: remove point\n• Click + Drag: zoom to region\n• Right-click: undo zoom\n• Ctrl + scroll: horizontal zoom\n• Ctrl + Click: lasso selection (double-click/Enter to finish)", wraplength=400, font=('', 8))
 
+=======
+        instructions = ttk.Label(scrollable_frame, 
+                        text="• Click: add point\n• Click near existing point: remove point\n• Click + Drag: zoom to region\n• Right-click: undo zoom\n• Ctrl + scroll: horizontal zoom\n• Ctrl + Click: lasso selection (double-click/Enter to finish)", 
+                        wraplength=400, font=('', 8))
+>>>>>>> origin/dev
         instructions.pack(padx=5, pady=(0, 5))
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/dev
         # ===== ANNOTATION MODE =====
         ttk.Label(scrollable_frame, text="Annotation Mode:", font=('', 9, 'bold')).pack(anchor=tk.W, pady=(0, 2))
 
         mode_frame = ttk.Frame(scrollable_frame)
         mode_frame.pack(fill=tk.X, pady=2)
 
+<<<<<<< HEAD
         ttk.Radiobutton(mode_frame, text="Contour Mode", variable=self.annotation_mode, 
+=======
+        ttk.Radiobutton(mode_frame, text="Syllable Mode", variable=self.annotation_mode, 
+>>>>>>> origin/dev
                         value='contour', command=self.switch_annotation_mode).pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(mode_frame, text="Sequence Mode", variable=self.annotation_mode,
                         value='sequence', command=self.switch_annotation_mode).pack(side=tk.LEFT, padx=5)
 
         # Mode instructions
         self.mode_instructions = ttk.Label(scrollable_frame, 
+<<<<<<< HEAD
             text="Contour Mode: Click points → Finish Contour (onset/offset auto-assigned)",
             wraplength=400, font=('', 8, 'italic'), foreground='blue')
         self.mode_instructions.pack(pady=2)
 
         # Sequence display area (hidden in contour mode)
+=======
+            text="Syllable Mode: Click points → Finish Contour (onset/offset auto-assigned)",
+            wraplength=400, font=('', 8, 'italic'), foreground='blue')
+        self.mode_instructions.pack(pady=2)
+
+        # Sequence display area (hidden in syllable mode)
+>>>>>>> origin/dev
         self.sequence_display_frame = ttk.LabelFrame(scrollable_frame, text="Contour Sequence", padding=5)
         self.sequence_display_frame.pack(fill=tk.X, pady=5)
         self.sequence_display_frame.pack_forget()  # Hidden initially
@@ -378,9 +472,15 @@ class ChangepointAnnotator:
                                          anchor='w')
         self.save_dir_button.pack(anchor=tk.W, pady=2)
 
+<<<<<<< HEAD
         # Syllable and annotation information
         self.syllable_info = ttk.Label(scrollable_frame, text="Unsaved Points: 0 | Saved Points: 0 | Saved Syllables: 0", wraplength=600, font=('', 8), justify=tk.LEFT)
         self.syllable_info.pack(pady=2)
+=======
+        # Contour and annotation information
+        self.contour_info = ttk.Label(scrollable_frame, text="Unsaved Points: 0 | Saved Points: 0 | Saved Contours: 0", wraplength=600, font=('', 8), justify=tk.LEFT)
+        self.contour_info.pack(pady=2)
+>>>>>>> origin/dev
 
         ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=3)
 
@@ -456,7 +556,11 @@ class ChangepointAnnotator:
 
         ]
 
+<<<<<<< HEAD
         # Arrange in 3x3 grid
+=======
+        # Arrange in 4x4 grid
+>>>>>>> origin/dev
         for i, (text, command) in enumerate(buttons):
             row = i // 4  # Integer division for row
             col = i % 4   # Modulo for column
@@ -757,10 +861,17 @@ class ChangepointAnnotator:
                     with open(annotation_file, 'r') as f:
                         data = json.load(f)
                         is_skipped = data.get('skipped', False)
+<<<<<<< HEAD
                         has_syllables = len(data.get('syllables', [])) == 0
                         
                         # Consider it skipped if marked OR has no syllables
                         if is_skipped or has_syllables:
+=======
+                        has_contours = len(data.get('contours', [])) == 0
+                        
+                        # Consider it skipped if marked OR has no contours
+                        if is_skipped or has_contours:
+>>>>>>> origin/dev
                             is_skipped = True
                 except:
                     pass
@@ -791,9 +902,15 @@ class ChangepointAnnotator:
         if self.y is not None:
             print(f"Audio length: {len(self.y) / self.sr:.2f}s")
         print(f"Current file: {self.current_file_idx + 1}/{len(self.audio_files)}")
+<<<<<<< HEAD
         print(f"Syllables: {len(self.syllables)}")
         print(f"Contours: {len(self.contours)}")
         print(f"Current syllable points: {len(self.current_syllable)}")
+=======
+        print(f"Contours: {len(self.contours)}")
+        print(f"Contours: {len(self.contours)}")
+        print(f"Current contour points: {len(self.current_contour)}")
+>>>>>>> origin/dev
         print(f"Total annotations: {len(self.annotations)}")
         print(f"Zoom stack depth: {len(self.zoom_stack)}")
         
@@ -825,7 +942,11 @@ class ChangepointAnnotator:
     def _convert_ylim_to_scale(self, fmin_hz, fmax_hz):
         """Convert Hz limits to current scale (mel or linear)"""
         if self.y_scale.get() == 'mel':
+<<<<<<< HEAD
             return utils.hz_to_mel(fmin_hz), utils.hz_to_mel(fmax_hz)
+=======
+            return audio_utils.hz_to_mel(fmin_hz), audio_utils.hz_to_mel(fmax_hz)
+>>>>>>> origin/dev
         else:
             return fmin_hz, fmax_hz
 
@@ -1756,6 +1877,7 @@ class ChangepointAnnotator:
             self.spec_image = None  # Clear cache
             self.update_display(recompute_spec=True)
 
+<<<<<<< HEAD
     def finish_syllable(self):
         """Mark current syllable as complete and start new one"""
 
@@ -1776,6 +1898,28 @@ class ChangepointAnnotator:
         self.rebuild_annotations()
         self.update_display(recompute_spec=False)
         print(f"✓ Syllable complete ({len(self.syllables)} total)")
+=======
+    def finish_contour(self):
+        """Mark current contour as complete and start new one"""
+
+        # Calculate total points across all contours
+        saved_points = sum(len(contour) for contour in self.contours)
+        total_points = len(self.current_contour) + saved_points
+        # Ensure that each contour has at least 2 points (onset and offset)
+        if total_points < 2:
+            messagebox.showwarning("Need at least 2 total points across all contours")
+            return
+        if len(self.current_contour) < 1:
+            messagebox.showwarning("Need at least 1 more point to add annotation")
+            return
+        
+        self.contours.append(self.current_contour[:])
+        self.current_contour = []
+        self.changes_made = True
+        self.rebuild_annotations()
+        self.update_display(recompute_spec=False)
+        print(f"✓ Contour complete ({len(self.contours)} total)")
+>>>>>>> origin/dev
         print(f"  Total annotations now: {len(self.annotations)}")
 
 
@@ -1857,12 +2001,20 @@ class ChangepointAnnotator:
 
 
     def switch_annotation_mode(self):
+<<<<<<< HEAD
         """Switch between syllable and sequence annotation modes"""
+=======
+        """Switch between contour and sequence annotation modes"""
+>>>>>>> origin/dev
         mode = self.annotation_mode.get()
         
         if mode == 'sequence':
             self.sequence_display_frame.pack(fill=tk.X, pady=5)
+<<<<<<< HEAD
             print("→ Sequence Mode: Define syllable boundaries")
+=======
+            print("→ Sequence Mode: Define contour boundaries")
+>>>>>>> origin/dev
         else:
             self.sequence_display_frame.pack_forget()
             print("→ Syllable Mode: Mark changepoints")
@@ -1994,8 +2146,13 @@ class ChangepointAnnotator:
             saved_points = sum(len(c['points']) if isinstance(c, dict) else len(c) for c in self.contours)
 
             
+<<<<<<< HEAD
             self.syllable_info.config(
                 text=f"Unsaved Points: {unsaved_points} | Saved Points: {saved_points} | This File: {saved_contours} contours | Total: {self.total_syllables_across_files} contours")
+=======
+            self.contour_info.config(
+                text=f"Unsaved Points: {unsaved_points} | Saved Points: {saved_points} | This File: {saved_contours} contours | Total: {self.total_contours_across_files} contours")
+>>>>>>> origin/dev
             
             self.update_annotations_list()
             self.update_sequence_display()
@@ -2118,11 +2275,22 @@ class ChangepointAnnotator:
             return False
         
         # Thresholds in interpretable units
+<<<<<<< HEAD
         time_threshold_ms = 10  # milliseconds
         time_threshold_s = time_threshold_ms / 1000.0
         freq_threshold_hz = 10  # Hz
         
         # Find closest annotation within threshold
+=======
+        time_threshold_ms = 50  # milliseconds (increased for easier clicking)
+        time_threshold_s = time_threshold_ms / 1000.0
+        freq_threshold_hz = 100  # Hz (increased for easier clicking)
+        
+        print(f"DEBUG: Checking for points near t={x:.3f}s, f={y:.0f}Hz")
+        print(f"  Thresholds: ±{time_threshold_ms}ms, ±{freq_threshold_hz}Hz")
+        
+        # Find closest point within threshold
+>>>>>>> origin/dev
         min_dist = float('inf')
         closest_idx = None
         closest_contour_idx = None
@@ -2138,6 +2306,10 @@ class ChangepointAnnotator:
                     min_dist = dist
                     closest_idx = i
                     closest_contour_idx = -1
+<<<<<<< HEAD
+=======
+                print(f"  Found in current_contour: idx={i}, dist={dist:.3f}")
+>>>>>>> origin/dev
         
         # Check completed contours
         for contour_idx, contour in enumerate(self.contours):
@@ -2157,6 +2329,10 @@ class ChangepointAnnotator:
                         min_dist = dist
                         closest_idx = point_idx
                         closest_contour_idx = contour_idx
+<<<<<<< HEAD
+=======
+                    print(f"  Found in contour {contour_idx}: point_idx={point_idx}, dist={dist:.3f}")
+>>>>>>> origin/dev
         
         # Remove the closest point
         if closest_idx is not None:
@@ -2164,6 +2340,10 @@ class ChangepointAnnotator:
                 # Remove from current contour
                 removed = self.current_contour.pop(closest_idx)
                 print(f"✗ Removed point from current contour: t={removed['time']:.3f}s, f={removed['freq']:.0f}Hz")
+<<<<<<< HEAD
+=======
+                print(f"  {len(self.current_contour)} points remaining in current contour")
+>>>>>>> origin/dev
             else:
                 # Remove from completed contour
                 if isinstance(self.contours[closest_contour_idx], dict):
@@ -2173,6 +2353,7 @@ class ChangepointAnnotator:
                     # If contour now has < 2 points, remove entire contour
                     if len(points) < 2:
                         self.contours.pop(closest_contour_idx)
+<<<<<<< HEAD
                         print(f"✗ Removed entire contour {closest_contour_idx+1} (< 2 points)")
                     else:
                         # Recalculate onset/offset indices after removal
@@ -2181,6 +2362,21 @@ class ChangepointAnnotator:
                         if closest_idx <= self.contours[closest_contour_idx]['offset_idx']:
                             self.contours[closest_contour_idx]['offset_idx'] = max(0, self.contours[closest_contour_idx]['offset_idx'] - 1)
                         print(f"✗ Removed point from contour {closest_contour_idx+1}: t={removed['time']:.3f}s, f={removed['freq']:.0f}Hz")
+=======
+                        print(f"✗ Removed entire contour {closest_contour_idx+1} (< 2 points remaining)")
+                    else:
+                        # Recalculate onset/offset indices after removal
+                        onset_idx = self.contours[closest_contour_idx]['onset_idx']
+                        offset_idx = self.contours[closest_contour_idx]['offset_idx']
+                        
+                        if closest_idx <= onset_idx:
+                            self.contours[closest_contour_idx]['onset_idx'] = max(0, onset_idx - 1)
+                        if closest_idx <= offset_idx:
+                            self.contours[closest_contour_idx]['offset_idx'] = max(0, offset_idx - 1)
+                        
+                        print(f"✗ Removed point from contour {closest_contour_idx+1}: t={removed['time']:.3f}s, f={removed['freq']:.0f}Hz")
+                        print(f"  {len(points)} points remaining in contour")
+>>>>>>> origin/dev
                 else:
                     # Old list format
                     removed = self.contours[closest_contour_idx].pop(closest_idx)
@@ -2195,6 +2391,7 @@ class ChangepointAnnotator:
             self.update_display(recompute_spec=False)
             return True
         
+<<<<<<< HEAD
         return False
 
 
@@ -2207,6 +2404,21 @@ class ChangepointAnnotator:
             return
         
         # self.total_syllables_across_files = 0
+=======
+        print(f"  No points found within threshold")
+        return False
+
+
+    def count_total_contours(self):
+        """Count total contours across all annotation files"""
+
+        # Early return if annotation_dir not set
+        if self.annotation_dir is None:
+            self.total_contours_across_files = 0
+            return
+        
+        # self.total_contours_across_files = 0
+>>>>>>> origin/dev
         
         for audio_file in self.audio_files:
             relative_path = audio_file.relative_to(self.base_audio_dir).parent
@@ -2219,11 +2431,19 @@ class ChangepointAnnotator:
             if annotation_file.exists():
                 with open(annotation_file, 'r') as f:
                     data = json.load(f)
+<<<<<<< HEAD
                     file_syllables = len(data.get('syllables', []))
                     self.total_syllables_across_files += file_syllables
                     print(f"File: {annotation_file.name}, Syllables: {file_syllables}")
 
         print(f"Total syllables across all files: {self.total_syllables_across_files}")
+=======
+                    file_contours = len(data.get('contours', []))
+                    self.total_contours_across_files += file_contours
+                    print(f"File: {annotation_file.name}, Contours: {file_contours}")
+
+        print(f"Total contours across all files: {self.total_contours_across_files}")
+>>>>>>> origin/dev
 
     def count_skipped_files(self):
         """Count total skipped files across all annotation files"""
@@ -2319,12 +2539,20 @@ class ChangepointAnnotator:
         self.save_dir_button.config(text=f"📁 {self.annotation_dir}")
         
         self.current_file_idx = 0
+<<<<<<< HEAD
         self.count_total_syllables()
+=======
+        self.count_total_contours()
+>>>>>>> origin/dev
         self.count_skipped_files()
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} files")
+<<<<<<< HEAD
         utils.save_last_directory(self.base_audio_dir)
+=======
+        audio_utils.save_last_directory(self.base_audio_dir)
+>>>>>>> origin/dev
 
 
     def load_test_audio(self):
@@ -2332,8 +2560,16 @@ class ChangepointAnnotator:
         from pathlib import Path
         
         # Go up to package dir, then up to repo root, then into test_files
+<<<<<<< HEAD
         test_audio_dir = 'test_files' / 'test_audio' / 'syllables' / 'kiwi'
         # test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'syllables' / 'kiwi'
+=======
+        # test_audio_dir = 'test_files' / 'test_audio' / 'contours' / 'kiwi'
+        # test_audio_dir = Path(__file__).parent / 'test_files' / 'test_audio' / 'contours' / 'kiwi'
+        test_audio_dir = Path(__file__).parent.parent / 'test_files' / 'test_audio' / 'syllables' / 'kiwi'
+
+
+>>>>>>> origin/dev
 
         
         if not test_audio_dir.exists():
@@ -2360,17 +2596,29 @@ class ChangepointAnnotator:
         self.save_dir_button.config(text=f"📁 {self.annotation_dir}")
         
         self.current_file_idx = 0
+<<<<<<< HEAD
         self.count_total_syllables()
+=======
+        self.count_total_contours()
+>>>>>>> origin/dev
         self.count_skipped_files()
         self.load_current_file()
         
         print(f"✓ Loaded {len(self.audio_files)} test files")
+<<<<<<< HEAD
         utils.save_last_directory(self.base_audio_dir)
+=======
+        audio_utils.save_last_directory(self.base_audio_dir)
+>>>>>>> origin/dev
 
     def auto_load_directory(self):
         """Auto-load last directory or default test audio on startup"""
         # Try last opened directory first
+<<<<<<< HEAD
         last_dir = utils.load_last_directory()
+=======
+        last_dir = audio_utils.load_last_directory()
+>>>>>>> origin/dev
         if last_dir and last_dir.exists():
             print(f"Auto-loading last directory: {last_dir}")
             
@@ -2388,7 +2636,11 @@ class ChangepointAnnotator:
                 self.annotation_dir.mkdir(parents=True, exist_ok=True)
                 self.save_dir_button.config(text=f"📁 {self.annotation_dir}")
                 self.current_file_idx = 0
+<<<<<<< HEAD
                 self.count_total_syllables()
+=======
+                self.count_total_contours()
+>>>>>>> origin/dev
                 self.count_skipped_files()
                 self.load_current_file()
                 return
@@ -2407,7 +2659,11 @@ class ChangepointAnnotator:
         print(f"Loading {audio_file.name}...")
         
         # Load audio
+<<<<<<< HEAD
         self.y, self.sr = pysoniq.load(str(audio_file))
+=======
+        self.y, self.sr = pysoniq.load_audio(str(audio_file))
+>>>>>>> origin/dev
         if self.y.ndim > 1:
             self.y = np.mean(self.y, axis=1)  # Convert to mono if stereo
         
@@ -2417,11 +2673,19 @@ class ChangepointAnnotator:
         self.file_was_annotated = False  # Track if file had previous annotations
 
         # Clear all annotation states before loading new file
+<<<<<<< HEAD
         print(f"DEBUG: Before clearing - annotations: {len(self.annotations)}, syllables: {len(self.syllables)}")
         self.annotations = []
         self.current_syllable = []
         self.syllables = []
         print(f"DEBUG: After clearing - annotations: {len(self.annotations)}, syllables: {len(self.syllables)}")
+=======
+        print(f"DEBUG: Before clearing - annotations: {len(self.annotations)}, contours: {len(self.contours)}")
+        self.annotations = []
+        self.current_contour = []
+        self.contours = []
+        print(f"DEBUG: After clearing - annotations: {len(self.annotations)}, contours: {len(self.contours)}")
+>>>>>>> origin/dev
 
         # Load existing annotations
         relative_path = audio_file.relative_to(self.base_audio_dir).parent
@@ -2431,10 +2695,21 @@ class ChangepointAnnotator:
         else:
             annotation_file = self.annotation_dir / f"{audio_file.stem}_changepoint_annotations.json"
 
+<<<<<<< HEAD
+=======
+
+
+
+
+
+
+
+>>>>>>> origin/dev
         if annotation_file.exists():
             with open(annotation_file, 'r') as f:
                 data = json.load(f)
                 
+<<<<<<< HEAD
                 # Debug: print what was loaded
                 print(f"JSON contents: syllables={len(data.get('syllables', []))}, annotations={len(data.get('annotations', []))}")
                 
@@ -2476,6 +2751,73 @@ class ChangepointAnnotator:
             self.current_syllable = []
             self.syllables = []
         
+=======
+                print(f"DEBUG: Loading {annotation_file.name}")
+                print(f"  Has contours: {'contours' in data}")
+                print(f"  Contour count: {len(data.get('contours', []))}")
+                
+                # Load contours (prefer new format, fall back to old)
+                if 'contours' in data and data['contours']:
+                    # New format - load directly
+                    self.contours = data['contours']
+                    print(f"  ✓ Loaded {len(self.contours)} contours (new format)")
+                    
+                    # DEBUG: Print first contour structure
+                    if self.contours:
+                        first_contour = self.contours[0]
+                        print("Loaded first_contour >> Needs debug possibly????? Due to list renaming convention from old anntations.")
+                        # print(f"  First contour has {len(first_contour.get('points', []))} points")
+                        # print(f"  Onset idx: {first_contour.get('onset_idx')}")
+                        # print(f"  Offset idx: {first_contour.get('offset_idx')}")
+                
+                elif 'contours' in data and data['contours']:
+                    # Old format - convert contours to contours
+                    old_contours = data['contours']
+                    self.contours = self.convert_old_contours_to_contours(old_contours)
+                    print(f"  ✓ Converted {len(old_contours)} old contours → {len(self.contours)} contours")
+                
+                else:
+                    # Empty file (possibly skipped)
+                    self.contours = []
+                    print(f"  ⚠ No contours found (empty or skipped file)")
+                
+                # CRITICAL: Clear current contour
+                self.current_contour = []
+                
+                # Rebuild annotations from contours
+                if self.contours:
+                    print(f"  Rebuilding annotations from {len(self.contours)} contours...")
+                    self.rebuild_annotations()
+                    self.file_was_annotated = True
+                    print(f"  → Built {len(self.annotations)} annotations")
+                else:
+                    self.annotations = []
+                    self.file_was_annotated = False
+
+        else:
+            print(f"No annotation file found at {annotation_file}")
+            self.annotations = []
+            self.current_contour = []
+            self.contours = []
+
+        self.changes_made = False
+        self.zoom_stack = []
+
+        # CRITICAL: Force full display update with recompute
+        print(f"DEBUG: Calling update_display with recompute_spec=True")
+        self.spec_image = None  # Clear cached image
+        self.update_display(recompute_spec=True)
+        self.update_progress()
+
+
+
+
+
+
+
+
+
+>>>>>>> origin/dev
         self.changes_made = False
         self.zoom_stack = []
         self.update_display(recompute_spec=True)  # force full recompute
@@ -2572,7 +2914,11 @@ class ChangepointAnnotator:
 
     def compute_spectrogram(self):
         """Compute spectrogram with current parameters"""
+<<<<<<< HEAD
         self.S_db, self.freqs, self.times = utils.compute_spectrogram_unified(
+=======
+        self.S_db, self.freqs, self.times = audio_utils.compute_spectrogram_unified(
+>>>>>>> origin/dev
             self.y, 
             self.sr,
             nfft=self.n_fft.get(),
@@ -2690,6 +3036,7 @@ class ChangepointAnnotator:
                     patch.remove()
 
             # Update title to reflect current save state
+<<<<<<< HEAD
             filename = self.audio_files[self.current_file_idx].name
             if self.changes_made:
                 saved = ""
@@ -2703,6 +3050,23 @@ class ChangepointAnnotator:
             # plot all annotations with correct colors
             
             # plot all annotations with correct colors
+=======
+            audio_file = self.audio_files[self.current_file_idx]
+            filename = audio_file.name
+            parent_dir = audio_file.parent.name  # Get parent directory name
+            grandparent_dir = audio_file.parent.parent.name
+
+            if self.changes_made:
+                save_marker = ""
+            elif self.file_was_annotated:
+                save_marker = "✓ "
+            else:
+                save_marker = "⊙ "
+            self.ax.set_title(f'{save_marker} {grandparent_dir} | {parent_dir} | {filename} | {len(self.contours)} contours | '
+                            f'n_fft={self.n_fft.get()} hop={self.hop_length.get()}')
+            
+            # plot all annotations with correct colors
+>>>>>>> origin/dev
             colors = {'onset': 'green', 'offset': 'magenta', 'changepoint': 'cyan'}
             markers = {'onset': '.', 'offset': '.', 'changepoint': '.'}
             
@@ -2751,10 +3115,17 @@ class ChangepointAnnotator:
                                     verticalalignment='center', horizontalalignment='left')
                 
                 # Calculate and display total duration and frequency delta
+<<<<<<< HEAD
                 if len(self.syllables) > 0:
                     first_syllable = sorted(self.syllables[0], key=lambda x: x['time'])
                     duration = first_syllable[-1]['time'] - first_syllable[0]['time']
                     freq_delta = max(p['freq'] for p in first_syllable) - min(p['freq'] for p in first_syllable)
+=======
+                if len(self.contours) > 0:
+                    first_contour = sorted(self.contours[0], key=lambda x: x['time'])
+                    duration = first_contour[-1]['time'] - first_contour[0]['time']
+                    freq_delta = max(p['freq'] for p in first_contour) - min(p['freq'] for p in first_contour)
+>>>>>>> origin/dev
                     
                     self.ax.text(0.02, 0.95, 
                                 f"Duration: {duration:.3f}s\nΔFreq: {freq_delta:.1f}Hz", 
@@ -2928,10 +3299,17 @@ class ChangepointAnnotator:
     
     def clear_all(self):
         """Clear all annotations"""
+<<<<<<< HEAD
         if (self.annotations or self.current_syllable) and messagebox.askyesno("Clear", "Remove all?"):
             self.annotations = []
             self.current_syllable = []
             self.syllables = []
+=======
+        if (self.annotations or self.current_contour) and messagebox.askyesno("Clear", "Remove all?"):
+            self.annotations = []
+            self.current_contour = []
+            self.contours = []
+>>>>>>> origin/dev
             self.changes_made = True
             self.update_display(recompute_spec=False)
 
@@ -3041,6 +3419,7 @@ class ChangepointAnnotator:
             
             print(f"Attempting to save to: {annotation_file}")
             print(f"Number of annotations: {len(self.annotations)}")
+<<<<<<< HEAD
             print(f"Number of syllables: {len(self.syllables)}")
             
             # Calculate syllable metrics
@@ -3052,16 +3431,34 @@ class ChangepointAnnotator:
                 # Get onset and offset (first and last in time)
                 onset_time = syllable_sorted[0]['time']
                 offset_time = syllable_sorted[-1]['time']
+=======
+            print(f"Number of contours: {len(self.contours)}")
+            
+            # Calculate contour metrics
+            contour_metrics = []
+            for i, contour in enumerate(self.contours):
+                # Sort by time
+                contour_sorted = sorted(contour, key=lambda x: x['time'])
+                
+                # Get onset and offset (first and last in time)
+                onset_time = contour_sorted[0]['time']
+                offset_time = contour_sorted[-1]['time']
+>>>>>>> origin/dev
                 
                 # Calculate duration
                 duration = offset_time - onset_time
                 
                 # Get frequency range
+<<<<<<< HEAD
                 all_freqs = [point['freq'] for point in syllable]
+=======
+                all_freqs = [point['freq'] for point in contour]
+>>>>>>> origin/dev
                 freq_min = min(all_freqs)
                 freq_max = max(all_freqs)
                 frequency_spread = freq_max - freq_min
                 
+<<<<<<< HEAD
                 syllable_metrics.append({
                     'syllable_index': i,
                     'onset_time': onset_time,
@@ -3071,13 +3468,29 @@ class ChangepointAnnotator:
                     'frequency_max': freq_max,
                     'frequency_spread': frequency_spread,
                     'num_points': len(syllable)
+=======
+                contour_metrics.append({
+                    'contour_index': i,
+                    'onset_time': onset_time,
+                    'offset_time': offset_time,
+                    'contour_duration': duration,
+                    'frequency_min': freq_min,
+                    'frequency_max': freq_max,
+                    'frequency_spread': frequency_spread,
+                    'num_points': len(contour)
+>>>>>>> origin/dev
                 })
             
             data = {
                 'audio_file': str(audio_file),
                 'annotations': self.annotations,
+<<<<<<< HEAD
                 'syllables': self.syllables,  # Save syllable structure
                 'syllable_metrics': syllable_metrics,  # Add metrics
+=======
+                'contours': self.contours,  # Save contour structure
+                'contour_metrics': contour_metrics,  # Add metrics
+>>>>>>> origin/dev
                 'spec_params': {
                     'n_fft': self.n_fft.get(),
                     'hop_length': self.hop_length.get(),
@@ -3096,7 +3509,11 @@ class ChangepointAnnotator:
             
             with open(annotation_file, 'w') as f:
                 json.dump(data, f, indent=2)
+<<<<<<< HEAD
                 self.count_total_syllables()  # Recalculate after save
+=======
+                self.count_total_contours()  # Recalculate after save
+>>>>>>> origin/dev
                 self.rebuild_annotations()  # Update display with new total
 
             
@@ -3104,10 +3521,17 @@ class ChangepointAnnotator:
             self.update_display(recompute_spec=False)
             print(f"✓ Saved successfully to {annotation_file}")
             
+<<<<<<< HEAD
             # Print syllable metrics for verification
             for metric in syllable_metrics:
                 print(f"  Syllable {metric['syllable_index']}: "
                     f"dur={metric['syllable_duration']:.3f}s, "
+=======
+            # Print contour metrics for verification
+            for metric in contour_metrics:
+                print(f"  Contour {metric['contour_index']}: "
+                    f"dur={metric['contour_duration']:.3f}s, "
+>>>>>>> origin/dev
                     f"freq_spread={metric['frequency_spread']:.1f}Hz")
             
         except Exception as e:
@@ -3179,8 +3603,13 @@ class ChangepointAnnotator:
             'skipped': True,
             'skip_reason': reason,
             'annotations': [],
+<<<<<<< HEAD
             'syllables': [],
             'syllable_metrics': [],
+=======
+            'contours': [],
+            'contour_metrics': [],
+>>>>>>> origin/dev
             'spec_params': {
                 'n_fft': self.n_fft.get(),
                 'hop_length': self.hop_length.get(),
@@ -3238,11 +3667,19 @@ class ChangepointAnnotator:
         was_looping = pysoniq.is_looping()
         was_playing = was_looping  # If looping, assume it was playing
         
+<<<<<<< HEAD
         # Auto-finish current syllable if it has points
         if len(self.current_syllable) >= 2:
             print("Auto-finishing syllable before navigation...")
             self.syllables.append(self.current_syllable[:])
             self.current_syllable = []
+=======
+        # Auto-finish current contour if it has points
+        if len(self.current_contour) >= 2:
+            print("Auto-finishing contour before navigation...")
+            self.contours.append(self.current_contour[:])
+            self.current_contour = []
+>>>>>>> origin/dev
             self.rebuild_annotations()
         
         if self.changes_made:
@@ -3267,11 +3704,19 @@ class ChangepointAnnotator:
         was_looping = pysoniq.is_looping()
         was_playing = was_looping  # If looping, assume it was playing
         
+<<<<<<< HEAD
         # Auto-finish current syllable if it has points
         if len(self.current_syllable) >= 2:
             print("Auto-finishing syllable before navigation...")
             self.syllables.append(self.current_syllable[:])
             self.current_syllable = []
+=======
+        # Auto-finish current contour if it has points
+        if len(self.current_contour) >= 2:
+            print("Auto-finishing contour before navigation...")
+            self.contours.append(self.current_contour[:])
+            self.current_contour = []
+>>>>>>> origin/dev
             self.rebuild_annotations()
         
         if self.changes_made:
