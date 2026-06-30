@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yaaat"
-version = "0.2.0"
+version = "0.2.1"
 description = "YAAAT! Yet Another Audio Annotation Tool. Interactive bioacoustic annotation tool for measuring vocalizations"
 readme = "README.md"
 license = "MIT"
